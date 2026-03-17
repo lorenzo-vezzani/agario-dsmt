@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>agar-erl</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: monospace;
+    background: #0f0f0f;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 1rem;
+  }
+
+  /* ---- lobby ---- */
+  #lobby {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .8rem;
+    padding: 2rem;
+    border: 1px solid #333;
+    border-radius: 12px;
+    background: #1a1a1a;
+  }
+  #lobby h2 { font-size: 18px; font-weight: 500; margin-bottom: .4rem; }
+  #lobby input {
+    width: 220px; padding: .5rem .8rem;
+    background: #111; border: 1px solid #444;
+    border-radius: 6px; color: #eee;
+    font-family: monospace; font-size: 14px;
+  }
+  #lobby input:focus { outline: none; border-color: #888; }
+  #lobby button {
+    width: 220px; padding: .6rem;
+    background: #2a4a2a; border: 1px solid #3a7a3a;
+    border-radius: 6px; color: #eee;
+    font-family: monospace; font-size: 14px;
+    cursor: pointer;
+  }
+  #lobby button:hover { background: #335533; }
+  #lobby-error { font-size: 12px; color: #f66; min-height: 16px; }
+
+  /* ---- game ---- */
+  #game { display: none; flex-direction: column; align-items: center; gap: .5rem; }
+  #hud {
+    font-size: 12px; color: #888;
+    display: flex; gap: 1.5rem;
+  }
+  #hud span { color: #ccc; }
+
+  canvas {
+    border: 1px solid #333;
+    border-radius: 4px;
+    cursor: none;
+    display: block;
+  }
+
+  #legend {
+    font-size: 11px; color: #555;
+    display: flex; gap: 1rem;
+  }
+</style>
+</head>
+<body>
+
+<!-- Lobby screen -->
+<div id="lobby">
+  <h2>agar-erl</h2>
+  <input id="input-game"   placeholder="game id  (e.g. game-1)" />
+  <input id="input-player" placeholder="player id (e.g. alice)" />
+  <button id="btn-join">Join game</button>
+  <div id="lobby-error"></div>
+</div>
+
+<!-- Game screen -->
+<div id="game">
+  <div id="hud">
+    <div>game: <span id="hud-game"></span></div>
+    <div>player: <span id="hud-player"></span></div>
+    <div>players online: <span id="hud-count">0</span></div>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="legend">move your mouse to steer · your ball is highlighted</div>
+</div>
+
+<script>
+  const ARENA_W  = 2000;
+  const ARENA_H  = 2000;
+  const SEND_HZ  = 20;   // how often to send direction to server (ms)
+
+  const lobby      = document.getElementById('lobby');
+  const gameDiv    = document.getElementById('game');
+  const canvas     = document.getElementById('canvas');
+  const ctx        = canvas.getContext('2d');
+  const inputGame  = document.getElementById('input-game');
+  const inputPlayer= document.getElementById('input-player');
+  const btnJoin    = document.getElementById('btn-join');
+  const lobbyError = document.getElementById('lobby-error');
+  const hudGame    = document.getElementById('hud-game');
+  const hudPlayer  = document.getElementById('hud-player');
+  const hudCount   = document.getElementById('hud-count');
+
+  let gameId   = '';
+  let playerId = '';
+  let ws       = null;
+  let gameState = {};       // {playerId: {x, y, r}}
+  let mouseX   = 0;
+  let mouseY   = 0;
+  let dirInterval = null;
+
+  // ---- Canvas sizing ----
+  // Fill the window minus some padding, keep aspect ratio of arena
+  function resizeCanvas() {
+    const maxW = window.innerWidth  - 40;
+    const maxH = window.innerHeight - 120;
+    const scale = Math.min(maxW / ARENA_W, maxH / ARENA_H);
+    canvas.width  = Math.floor(ARENA_W * scale);
+    canvas.height = Math.floor(ARENA_H * scale);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', () => { resizeCanvas(); render(); });
+
+  // ---- Scale helpers ----
+  function toCanvas(arenaX, arenaY) {
+    return {
+      cx: arenaX * canvas.width  / ARENA_W,
+      cy: arenaY * canvas.height / ARENA_H
+    };
+  }
+  function scaleR(r) {
+    return r * canvas.width / ARENA_W;
+  }
+
+  // ---- Join ----
+  btnJoin.addEventListener('click', () => {
+    const g = inputGame.value.trim();
+    const p = inputPlayer.value.trim();
+    if (!g || !p) {
+      lobbyError.textContent = 'fill in both fields';
+      return;
+    }
+    gameId   = g;
+    playerId = p;
+    connect();
+  });
+
+  // allow Enter key in inputs
+  [inputGame, inputPlayer].forEach(el => {
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') btnJoin.click();
+    });
+  });
+
+  // ---- WebSocket ----
+  function connect() {
+    const url = `ws://localhost:49153/ws/${encodeURIComponent(gameId)}/${encodeURIComponent(playerId)}`;
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      lobbyError.textContent = '';
+      lobby.style.display  = 'none';
+      gameDiv.style.display = 'flex';
+      hudGame.textContent   = gameId;
+      hudPlayer.textContent = playerId;
+      startSendingDirection();
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        gameState = data.players || {};
+        hudCount.textContent = Object.keys(gameState).length;
+        render();
+      } catch(err) {
+        console.error('parse error:', err, e.data);
+      }
+    };
+
+    ws.onerror = () => {
+      lobbyError.textContent = 'connection error — is the server running?';
+      showLobby();
+    };
+
+    ws.onclose = () => {
+      stopSendingDirection();
+      showLobby();
+    };
+  }
+
+  function showLobby() {
+    gameDiv.style.display = 'none';
+    lobby.style.display   = 'flex';
+    gameState = {};
+  }
+
+  // ---- Mouse tracking ----
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+  });
+
+  // ---- Direction sending ----
+  // Compute direction from own ball to mouse, normalize, send to server.
+  function startSendingDirection() {
+    dirInterval = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      const me = gameState[playerId];
+      if (!me) return;   // not yet in state
+
+      // own ball position in canvas coords
+      const { cx, cy } = toCanvas(me.x, me.y);
+
+      // vector from ball to mouse
+      const ddx = mouseX - cx;
+      const ddy = mouseY - cy;
+      const len  = Math.sqrt(ddx * ddx + ddy * ddy);
+
+      // if mouse is on top of the ball, send zero direction (stop)
+      if (len < 1) {
+        ws.send(JSON.stringify({dx: 0.0, dy: 0.0}));
+        return;
+      }
+
+      // normalize to unit vector
+      const dx = ddx / len;
+      const dy = ddy / len;
+      ws.send(JSON.stringify({dx, dy}));
+    }, SEND_HZ);
+  }
+
+  function stopSendingDirection() {
+    if (dirInterval) { clearInterval(dirInterval); dirInterval = null; }
+  }
+
+  // ---- Rendering ----
+  // Palette: assign a stable color to each player name
+  const colorPalette = [
+    '#4fc3f7', '#81c784', '#ffb74d', '#f06292',
+    '#ce93d8', '#80cbc4', '#fff176', '#ff8a65'
+  ];
+  const playerColors = {};
+  let colorIndex = 0;
+
+  function getColor(id) {
+    if (!playerColors[id]) {
+      playerColors[id] = colorPalette[colorIndex % colorPalette.length];
+      colorIndex++;
+    }
+    return playerColors[id];
+  }
+
+  function render() {
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // Background
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid (subtle)
+    ctx.strokeStyle = '#1e1e1e';
+    ctx.lineWidth = 0.5;
+    const gridStep = W / 10;
+    for (let x = 0; x <= W; x += gridStep) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y <= H; y += gridStep) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Draw all balls — own ball last (on top)
+    const entries = Object.entries(gameState);
+    const others  = entries.filter(([id]) => id !== playerId);
+    const self    = entries.filter(([id]) => id === playerId);
+
+    [...others, ...self].forEach(([id, p]) => {
+      const { cx, cy } = toCanvas(p.x, p.y);
+      const r = scaleR(p.r);
+      const isMe = id === playerId;
+      const color = getColor(id);
+
+      // Ball fill
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = isMe ? color : color + '99';  // own ball fully opaque
+      ctx.fill();
+
+      // Border — thicker for own ball
+      ctx.strokeStyle = isMe ? '#fff' : color;
+      ctx.lineWidth   = isMe ? 2 : 0.5;
+      ctx.stroke();
+
+      // Player name label
+      ctx.fillStyle  = '#fff';
+      ctx.font       = `${Math.max(10, r * 0.8)}px monospace`;
+      ctx.textAlign  = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(id, cx, cy);
+    });
+  }
+
+  // Initial blank render
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# Erlang build
+erl/**/_build/
+erl/**/rebar.lock
