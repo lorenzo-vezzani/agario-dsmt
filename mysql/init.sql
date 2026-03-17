@@ -1,0 +1,13 @@
+DROP DATABASE IF EXISTS dsmt;
+CREATE DATABASE dsmt CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE dsmt;
+
+CREATE TABLE user (
+    username VARCHAR(50) PRIMARY KEY,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    games_played INT NOT NULL,
+    games_won INT NOT NULL,
+    dots_eaten INT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
