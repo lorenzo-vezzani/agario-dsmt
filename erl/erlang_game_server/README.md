@@ -77,10 +77,3 @@ browser <--WS--> ws_handler process (one per client)
                       |
                game_server (one per game, holds state)
 ```
-
-The game server runs a tick every 20ms via `erlang:send_after/3`.
-On each tick it broadcasts the current counters to all registered WS handler pids,
-which forward the payload to the browser as a JSON text frame:
-```json
-{"players": {"alice": 5, "bob": 3}}
-```
