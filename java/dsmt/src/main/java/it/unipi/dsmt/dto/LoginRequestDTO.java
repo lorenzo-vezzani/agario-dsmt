@@ -1,13 +1,14 @@
 package it.unipi.dsmt.dto;
 
-public class LoginRequestDTO {
-    private String username;
-    private String password;
+import jakarta.validation.constraints.NotBlank;
 
-    public LoginRequestDTO(String username, String password) {
-        this.username = username;
-        this.password = password;
-    }
+public class LoginRequestDTO {
+
+    @NotBlank
+    private String username;
+
+    @NotBlank
+    private String password;
 
     public String getUsername() {
         return username;
