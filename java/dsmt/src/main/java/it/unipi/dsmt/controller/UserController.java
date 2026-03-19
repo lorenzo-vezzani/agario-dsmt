@@ -1,0 +1,21 @@
+package it.unipi.dsmt.controller;
+
+import org.springframework.web.bind.annotation.*;
+import it.unipi.dsmt.model.User;
+import it.unipi.dsmt.service.UserService;
+
+@RestController
+@RequestMapping("/user")
+public class UserController {
+
+    private final UserService service;
+
+    public UserController(UserService service) {
+        this.service = service;
+    }
+
+    @GetMapping("/{username}")
+    public User getUser(@PathVariable String username) {
+        return service.getUserByUsername(username);
+    }
+}
