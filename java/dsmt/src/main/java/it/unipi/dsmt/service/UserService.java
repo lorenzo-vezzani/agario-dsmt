@@ -2,6 +2,7 @@ package it.unipi.dsmt.service;
 
 import it.unipi.dsmt.dto.RegisterRequestDTO;
 import it.unipi.dsmt.exception.EmailAlreadyExistsException;
+import it.unipi.dsmt.exception.UserNotFoundException;
 import it.unipi.dsmt.exception.UsernameAlreadyExistsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,11 @@ public class UserService {
     }
 
     public User getUserByUsername(String username) {
-        return repo.findById(username).orElse(null);
+        User foundUser = repo.findById(username).orElse(null);
+        if (foundUser == null) {
+            throw new UserNotFoundException();
+        }
+
+        return foundUser;
     }
 }

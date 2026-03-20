@@ -35,13 +35,13 @@ class GlobalExceptionHandler {
     // ------------------------------------------- //
 
 
-    // ---------- HANDLERS FOR LOGIN ---------- //
+    // ---------- HANDLERS FOR LOGIN (AND GET USER) ---------- //
 
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<@NotNull LoginResponseDTO> handleUserNotFoundException(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
-                .body(new LoginResponseDTO(ex.getMessage(), null));
+                .build();
     }
 
     @ExceptionHandler(IncorrectPasswordException.class)
@@ -51,7 +51,7 @@ class GlobalExceptionHandler {
                 .body(new LoginResponseDTO(ex.getMessage(), null));
     }
 
-    // ---------------------------------------- //
+    // ------------------------------------------------------- //
 
 
     // ---------- HANDLERS FOR JSON VALIDATION ---------- //
