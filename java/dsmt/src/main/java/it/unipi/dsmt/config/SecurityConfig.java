@@ -1,5 +1,6 @@
 package it.unipi.dsmt.config;
 
+import org.springframework.boot.security.autoconfigure.web.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -26,6 +27,8 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())               // disable Cross-Site Request Forgery
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/", "/index.html").permitAll()
+                        .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
                         .requestMatchers("/auth/**").permitAll()                    // all apis require auth except login and register
                         .anyRequest().authenticated()                                 // all other apis must be authenticated
                 ).addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
