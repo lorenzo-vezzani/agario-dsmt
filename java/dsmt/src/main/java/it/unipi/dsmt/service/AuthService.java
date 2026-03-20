@@ -18,7 +18,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public boolean authUser(LoginRequestDTO dto) {
+    public void authUser(LoginRequestDTO dto) {
         // retrieve user with the given username
         User foundUser = repo.findByUsername(dto.getUsername());
         if (foundUser == null) {
@@ -30,7 +30,6 @@ public class AuthService {
             throw new IncorrectPasswordException();
         }
 
-        // authenticated
-        return true;
+        // if we make it here, the authentication is complete
     }
 }

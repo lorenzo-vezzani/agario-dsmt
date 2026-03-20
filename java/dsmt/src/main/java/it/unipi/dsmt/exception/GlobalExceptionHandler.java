@@ -2,6 +2,7 @@ package it.unipi.dsmt.exception;
 
 import it.unipi.dsmt.dto.LoginResponseDTO;
 import it.unipi.dsmt.dto.RegisterResponseDTO;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -18,14 +19,14 @@ class GlobalExceptionHandler {
     // ---------- HANDLERS FOR REGISTER ---------- //
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
-    public ResponseEntity<RegisterResponseDTO> handleEmailAlreadyExistsException(EmailAlreadyExistsException ex) {
+    public ResponseEntity<@NotNull RegisterResponseDTO> handleEmailAlreadyExistsException(EmailAlreadyExistsException ex) {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(new RegisterResponseDTO(ex.getMessage(), null));
     }
 
     @ExceptionHandler(UsernameAlreadyExistsException.class)
-    public ResponseEntity<RegisterResponseDTO> handleUsernameAlreadyExistsException(Exception ex) {
+    public ResponseEntity<@NotNull RegisterResponseDTO> handleUsernameAlreadyExistsException(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(new RegisterResponseDTO(ex.getMessage(), null));
@@ -37,14 +38,14 @@ class GlobalExceptionHandler {
     // ---------- HANDLERS FOR LOGIN ---------- //
 
     @ExceptionHandler(UserNotFoundException.class)
-    public ResponseEntity<LoginResponseDTO> handleUserNotFoundException(Exception ex) {
+    public ResponseEntity<@NotNull LoginResponseDTO> handleUserNotFoundException(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(new LoginResponseDTO(ex.getMessage(), null));
     }
 
     @ExceptionHandler(IncorrectPasswordException.class)
-    public ResponseEntity<LoginResponseDTO> handleIncorrectPasswordException(Exception ex) {
+    public ResponseEntity<@NotNull LoginResponseDTO> handleIncorrectPasswordException(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.UNAUTHORIZED)
                 .body(new LoginResponseDTO(ex.getMessage(), null));

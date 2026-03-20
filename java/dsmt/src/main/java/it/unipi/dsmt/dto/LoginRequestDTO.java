@@ -14,7 +14,7 @@ public class LoginRequestDTO {
         return username;
     }
 
-    public void setUsername(String username) {
+    public void setUsername(@NotBlank String username) {
         this.username = username;
     }
 
@@ -22,7 +22,7 @@ public class LoginRequestDTO {
         return password;
     }
 
-    public void setPassword(String password) {
+    public void setPassword(@NotBlank String password) {
         this.password = password;
     }
 }

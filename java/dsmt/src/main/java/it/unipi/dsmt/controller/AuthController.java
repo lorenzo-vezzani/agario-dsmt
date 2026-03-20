@@ -8,6 +8,7 @@ import it.unipi.dsmt.model.User;
 import it.unipi.dsmt.service.AuthService;
 import it.unipi.dsmt.service.JwtService;
 import it.unipi.dsmt.service.UserService;
+import org.jetbrains.annotations.NotNull;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +31,7 @@ class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<RegisterResponseDTO> createUser(@Valid @RequestBody RegisterRequestDTO dto) {
+    public ResponseEntity<@NotNull RegisterResponseDTO> createUser(@Valid @RequestBody RegisterRequestDTO dto) {
         User savedUser = service.createUser(dto);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -38,7 +39,7 @@ class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponseDTO> login(@Valid @RequestBody LoginRequestDTO dto) {
+    public ResponseEntity<@NotNull LoginResponseDTO> login(@Valid @RequestBody LoginRequestDTO dto) {
         authService.authUser(dto);
         return ResponseEntity
                 .status(HttpStatus.OK)
