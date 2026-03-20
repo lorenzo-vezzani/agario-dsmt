@@ -1,74 +1,79 @@
 %%% ---------------
 %%% Module description
 %%% 
-%%% Application entry point for the EGS node.
-%%% Responsible for:
-%%%   - starting the ETS game registry
-%%%   - starting the Cowboy WebSocket listener
-%%%   - starting the top-level supervisor
+%%% Application entry point for the node.
+%%% 
+%%% Starts the cowboy websocket listener
 %%% ---------------
 
 -module(egs_node_entry_point).
 -behaviour(application).
 -export([start/2, stop/1]).
 
+-define(WS_PORT,    49153).
+-define(LIST,       ws_list).
 
 %%% Module specific cli print
-print_cli(Text, Args) ->
-    io:format("[NODE INIT][~p] " ++ Text ++ "~n", [self()] ++ Args).
+print_cli(Text, Args) -> egs_utils:print_cli("NODE INIT", Text, Args).
 
 
-%%% Starts the application.
-%%% Called automatically by OTP when the application is started.
+%%% Starts the application. called automatically when the application is started.
 %%%
 %%% StartType - type of start (normal, or failover/takeover in distributed OTP)
 %%% StartArgs - arguments defined in the .app file, usually []
 %%%
-%%% Returns {ok, Pid} (from the top-level supervisor, start_link),
-%%%  which OTP requires to track the supervision tree.
+%%% Returns {ok, Pid} (passed from the top-level supervisor, start_link),
+%%%     This return is required to track the supervision tree.
 start(_StartType, _StartArgs) ->
     
-    %% Define the routing table for Cowboy
-    %% '_' matches any hostname
-    %% The route "/ws/:game_id/:player_id" binds two path segments as variables:
-    %%   game_id   - identifies which game session to join
-    %%   player_id - identifies the player within that session
-    %% All matching requests are handled by egs_websocket_handler.
-    DispatchWs = cowboy_router:compile([{
+    %% Create a map URL to handler
+    Websocket_dispatch = cowboy_router:compile([{
+
+            % '_' to match any hostname
             '_', 
+
+            % list of maps
             [{
+
+                % path pattern
+                % NOTE: game_id and player_id are dynamic binding variables
                 "/ws/:game_id/:player_id", 
+
+                % Handler associated (separate module handler)
                 egs_websocket_handler, 
+
+                % initial options passed to the handler on init
                 []
             }]
     }]),
+    print_cli("{start/2} WebSocket dispatch created", []),
 
-    %% Start a plain HTTP listener named 'ws' on port 49153.
+    %% Start a HTTP listener on port 49153.
     %% Cowboy will upgrade incoming HTTP requests to WebSocket
-    %% automatically when the handler returns {cowboy_websocket, ...}.
-    %%
-    %% Arguments:
-    %%   ws                          - listener name (atom), used to stop it later
-    %%   [{port, 49153}]             - TCP transport options
-    %%   #{env => #{dispatch => ...}} - protocol options, contains the routing table
-    {ok, _} = cowboy:start_clear(ws,
-        [{port, 49153}],
-        #{env => #{dispatch => DispatchWs}}
-    ),
+    %% automatically when the handler returns {cowboy_websocket, ...}
+    {ok, _} = cowboy:start_clear(
 
-    %% Start the top-level supervisor, which in turn starts the game
-    %% management supervisor and all persistent worker processes.
-    %% OTP requires start/2 to return the pid of the top-level supervisor.
+        % name
+        ?LIST,
+
+        % options (just port here)
+        [{port, ?WS_PORT}],
+
+        % Link this listener to the previous map
+        #{env => #{dispatch => Websocket_dispatch}}
+    ),
+    print_cli("{start/2} WebSocket listeners started on port ~p", [?WS_PORT]),
+
+
+    %% Start the top-level supervisor, which in turn starts the game mgmt supervisor
     egs_node_sup:start_link().
 
 
-%%% Stops the application cleanly.
-%%% Called automatically by OTP during shutdown.
-%%%
-%%% State - the term returned by start/2, ignored here
+%%% Stops the application, called automatically by OTP during shutdown.
 stop(_State) ->
     
-    %% Stop the Cowboy listener gracefully.
-    %% This closes all open WebSocket connections before shutting down.
-    cowboy:stop_listener(ws),
+    % Stop the Cowboy listener
+    % also all websockets are closed
+    cowboy:stop_listener(?LIST),
+    print_cli("{stop/1} Listener stopped", []),
     ok.

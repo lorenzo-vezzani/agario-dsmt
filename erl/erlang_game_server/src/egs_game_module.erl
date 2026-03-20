@@ -1,22 +1,15 @@
 %%% ---------------
 %%% Module description
 %%%
-%%% Game logic process — one instance per running game session.
-%%% Implemented as a gen_server. Spawned and supervised by egs_games_mgmt.
-%%%
-%%% Responsibilities:
-%%%   - track which WebSocket handler processes are connected (clients map)
-%%%   - track each player's game actions
-%%%   - broadcast the current counters to all clients every TICK_MS milliseconds
-%%%   - handle player join, leave, and action events
-%%%   - monitor connected WS handler pids and clean up if one crashes
+%%% Game logic used by Game processes, one for each game
+%%% Spawned and supervised by egs_games_mgmt
 %%%
 %%% State:
-%%%   game_id  - binary, the unique identifier of this game session
-%%%   counters - map of PlayerId (binary) -> press count (integer) TODO CHANGE
-%%%   clients  - map of WsPid (pid) -> PlayerId (binary)
+%%%   game_id   - binary, the unique identifier of this game session
+%%%   balls     - map of PlayerId (binary) -> Ball entity (x, y, dx, dy, radius)
+%%%   clients   - map of WsPid (pid) -> PlayerId (binary)
 %%%
-%%% The process registers itself in egs_games_mgmt's ETS table on init
+%%% The process registers itself in egs_games_mgmt ETS table on init
 %%% and unregisters on terminate, so it can always be found by game_id.
 %%% ---------------
 
@@ -24,21 +17,20 @@
 -behaviour(gen_server).
 
 -export([start_link/1]).
--export([join/2, leave/2, set_direction/3]).
+-export([join/2, leave/2, player_msg/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 
 % Client update refresh rate
--define(TICK_MS, 20).
--define(ARENA_W,    2000.0).
--define(ARENA_H,    2000.0).
--define(BALL_R,     20.0).
--define(SPEED,      3.0).
+-define(TICK_MS,    20).
 
+
+%%% ---------------------------
+%%% region MANAGEMENT FUNCTIONS
+%%% ---------------------------
 
 %%% Module specific cli print
-print_cli(Text, Args) ->
-    io:format("[GameLogic][~p] " ++ Text ++ "~n", [self()] ++ Args).
+print_cli(Text, Args) -> egs_utils:print_cli("GameLogic", Text, Args).
 
 
 %%% Starts a game process and links it to the calling supervisor.
@@ -50,164 +42,260 @@ print_cli(Text, Args) ->
 start_link(GameId) ->
     gen_server:start_link(?MODULE, GameId, []).
 
-%%% Registers a WebSocket handler process as a player in this game.
-%%% Looks up the game pid from the registry, then sends an async cast.
-%%% The cast includes self() so the game process can monitor the WS handler.
+
+%%% Initializes the game process state.
+%%% Registers this pid in the ETS registry so it can be found by game_id.
+%%% Schedules the first tick immediately.
 %%%
-%%% IMPORTANT: must be called from websocket_init/1, not init/2,
-%%% so the WS process is fully initialized before being monitored.
-%%%
-%%% GameId   - binary game identifier
-%%% PlayerId - binary player name, e.g. <<"alice">>
+%%% GameId: passed from start_link/1 via the supervisor
+init(GameId) ->
+
+    % trap_exit granys that if a linked process dies, we receive an {'EXIT', Pid, Reason} msg
+    % so terminate/2 is always called for proper ETS cleanup
+    process_flag(trap_exit, true),
+
+    print_cli("{init/1} starting game=~s", [GameId]),
+
+    % register game, for ETS table
+    egs_games_mgmt:register_game(GameId, self()),
+
+    % Initializes tick update
+    erlang:send_after(?TICK_MS, self(), tick),
+
+    % initializes state
+    {ok, #{
+        game_id => GameId,  % init to the passed GameId
+        clients => #{},     % no clients yet
+        balls   => #{}      % balls empty
+    }}.
+
+
+%%% Called when the game process is shutting down (normally or after a crash).
+%%% Removes this game from the ETS registry so no new clients can join
+%%% and stale entries are not left behind.
+terminate(_Reason, State) ->
+    print_cli("{terminate/2} game=~s shutting down", [maps:get(game_id, State)]),
+    egs_games_mgmt:unregister_game(maps:get(game_id, State)),
+    ok.
+
+
+%%% endregion 
+%%% ---------------------------
+%%% region JOIN/LEAVE a game
+%%% ---------------------------
+
+%%% Register the websocket handler (created upon connection by client)
+%%% as a new player in the game GameId
+%%% Via cast message, send the join information to the correct Game Process
 join(GameId, PlayerId) ->
     print_cli("{join/2} game=~s player=~s", [GameId, PlayerId]),
+
+    % lookup game by its id
     case egs_games_mgmt:lookup(GameId) of
+
+        % game found, we can register ws handler
         {ok, Pid} ->
-            print_cli("{join/2} found game pid=~p, sending cast", [Pid]),
-            gen_server:cast(Pid, {join, self(), PlayerId});
+            % send message JOIN to game process of pid Pid
+            gen_server:cast(Pid, {join, self(), PlayerId}),
+            print_cli("{join/2} found game pid=~p, sending cast", [Pid]);
+
+        % error in lookup
         Err ->
             print_cli("{join/2} lookup failed: ~p", [Err]),
             Err
     end.
 
 
-%%% Unregisters a WebSocket handler process from the game.
-%%% Called by the WS handler's terminate/3 when the browser disconnects.
-%%% The game process removes the player from both the clients and counters maps.
+%%% Unregisters a websocket handler process from the game
+%%% Called by websocket handler terminate/3 when browser disconnects
 %%%
-%%% GameId   - binary game identifier
-%%% PlayerId - binary player name
+%%% GameId: binary game identifier
+%%% PlayerId: binary player name
 leave(GameId, PlayerId) ->
     print_cli("{leave/2} game=~s player=~s", [GameId, PlayerId]),
+
+    % search for the specified game
     case egs_games_mgmt:lookup(GameId) of
+
+        % cast 'leave' message
         {ok, Pid} -> gen_server:cast(Pid, {leave, self(), PlayerId});
+
         Err       -> Err
     end.
 
 
-%%% Updates the movement direction for a player's ball.
-%%% Called by the WS handler every time the browser sends a mouse position.
-%%%
-%%% The direction vector {Dx, Dy} is expected to be already normalized
-%%% (unit vector) by the client, so the server only needs to scale by speed.
-%%%
-%%% GameId   - binary game identifier
-%%% PlayerId - binary player name
-%%% {Dx, Dy} - normalized direction vector (floats in range [-1.0, 1.0])
-set_direction(GameId, PlayerId, {Dx, Dy}) ->
-    case egs_games_mgmt:lookup(GameId) of
-        {ok, Pid} ->
-            gen_server:cast(Pid, {set_direction, PlayerId, Dx, Dy});
-        Err ->
-            print_cli("{set_direction/3} lookup failed: ~p", [Err]),
-            Err
-    end.
-
-
-%%% Initializes the game process state.
-%%% Registers this pid in the ETS registry so it can be found by game_id.
-%%% Schedules the first tick immediately.
-%%%
-%%% GameId - passed from start_link/1 via the supervisor
-init(GameId) ->
-
-    % TODO comment
-    process_flag(trap_exit, true),
-    print_cli("{init/1} starting game=~s", [GameId]),
-    egs_games_mgmt:register(GameId, self()),
-    erlang:send_after(?TICK_MS, self(), tick),
-    {ok, #{
-        game_id => GameId,
-        players => #{},
-        clients => #{}
-    }}.
-
+%%% endregion 
+%%% ---------------------------
+%%% region HANDLE CAST
+%%% handle messages from client
+%%% ---------------------------
 
 %%% Handles a player joining the game.
-%%% Monitors the WS handler pid so we can clean up if it crashes unexpectedly.
-%%% Initializes the player's counter to 0.
+%%% - Initilizes a new ball for the playey
+%%% - Also start monitoring websocket handler pid
 handle_cast({join, WsPid, PlayerId}, State) ->
 
-    %% Monitor the WS handler process. If it crashes (e.g. network drop),
-    %% we receive a {'DOWN', ...} message and remove the player automatically,
-    %% without needing the WS handler to call leave/2 explicitly.
+    % Monitor the websocket handler process. 
+    % This allows autuomatic removal, via the handler DOWN
     monitor(process, WsPid),
 
     % spawns ball at random position with zero direction
-    Player = #{
-        x      => rand:uniform() * ?ARENA_W,
-        y      => rand:uniform() * ?ARENA_H,
-        dx     => 0.0,
-        dy     => 0.0,
-        radius => ?BALL_R
-    },
+    NewBall = egs_game_module_utils:gl__spawn_random_ball(),
 
+    % insert new player, both to WS pids and balls map
     Clients = maps:put(WsPid, PlayerId, maps:get(clients, State)),
-    Players = maps:put(PlayerId, Player, maps:get(players, State)),
-    print_cli("{handle_cast join} player=~s clients_now=~p",
-        [PlayerId, maps:size(Clients)]),
-    {noreply, State#{clients => Clients, players => Players}};
+    Balls = maps:put(PlayerId, NewBall, maps:get(balls, State)),
+    
+    % log
+    print_cli("{handle_cast join} player=~s (#clients=~p)", [PlayerId, maps:size(Clients)]),
+
+    % return State
+    {
+        noreply, 
+
+        % new state map
+        State#{
+            clients => Clients, 
+            balls => Balls
+        }
+    };
+
+%%% Parses and applies a raw message from the browser.
+%%% All game-specific interpretation lives here, not in the WS handler.
+handle_cast({player_msg, PlayerId, Msg}, State) ->
+
+    % uncomment for full debug, every 20ms
+    % print_cli("{handle_cast MSG} msg=~s", [Msg]),
+
+    % retrive balls map
+    Balls = maps:get(balls, State),
+
+    % search (and get) player's ball
+    PlayerBall = maps:find(PlayerId, Balls),
+
+    % decode client message
+    MsgDecoded = egs_game_module_utils:decode__direction_update(Msg),
+
+    % decode client message, also find the ball entity of the player
+    case {PlayerBall, MsgDecoded} of
+
+        % IF player_id is found AND decode returns ok 
+        {{ok, Ball}, {ok, Dx, Dy}} ->
+
+            % update balls maps, updating this player's ball info
+            BallsUpdated = Balls#{
+                PlayerId => Ball#{
+                    dx => Dx, 
+                    dy => Dy
+                }
+            },
+
+            % return updated state
+            {noreply, State#{balls => BallsUpdated}};
+
+        % on whatever error just do not update
+        _ ->
+            {noreply, State}
+    end;
+
 
 %%% Handles a player leaving the game cleanly (browser tab closed normally).
 %%% Removes the player from both maps.
 handle_cast({leave, WsPid, PlayerId}, State) ->
+
+    % remove from both maps
     Clients = maps:remove(WsPid, maps:get(clients, State)),
-    Players = maps:remove(PlayerId, maps:get(players, State)),
+    Balls = maps:remove(PlayerId, maps:get(balls, State)),
+
+    % log
     print_cli("{handle_cast leave} player=~s", [PlayerId]),
-    {noreply, State#{clients => Clients, players => Players}};
+    
+    % update state
+    {noreply, State#{clients => Clients, balls => Balls}}.
 
 
-%%% Updates the direction vector for a player's ball.
-%%% The direction is stored and applied on the next tick.
-handle_cast({set_direction, PlayerId, Dx, Dy}, State) ->
-    Players = maps:get(players, State),
-    case maps:find(PlayerId, Players) of
-        {ok, Player} ->
-            NewPlayer  = Player#{dx => Dx, dy => Dy},
-            NewPlayers = maps:put(PlayerId, NewPlayer, Players),
-            {noreply, State#{players => NewPlayers}};
-        error ->
-            {noreply, State}
+%%% Send a raw browser message to the game process
+%%% Parsing of message is inside handle_cast, this is 
+%%% just a wrapper to avoid sending to non-existing pid
+player_msg(GameId, PlayerId, Msg) ->
+
+    % lookup pid of the game process
+    case egs_games_mgmt:lookup(GameId) of
+
+        % if found, send the raw message to the game process
+        {ok, Pid} -> gen_server:cast(Pid, {player_msg, PlayerId, Msg});
+
+        % not found
+        Err       -> Err
     end.
 
 
+%%% endregion 
+%%% ---------------------------
+%%% region HANDLE INFO
+%%% 
+%%% handles messages from other Erlang processes
+%%%  - tick : from self(), to implement periodic update
+%%%  - down : from websocket handler on disconnection
+%%% ---------------------------
+
 %%% Handles the periodic tick:
-%%%   1. Move all balls according to their current direction
-%%%   2. Check for collisions between all pairs of balls
-%%%   3. Broadcast the updated state to all clients
+%%% 1) Move all balls
+%%% 2) check for collisions
+%%% 3) Broadcast updated state to all clients
 handle_info(tick, State) ->
-    Players0 = maps:get(players, State),
-    Clients  = maps:get(clients, State),
+    BallsInitial = maps:get(balls, State),
+    Clients = maps:get(clients, State),
 
-    %% Step 1: move all balls
-    Players1 = move_all(Players0),
+    % 1) move all balls
+    BallsMoved = egs_game_module_utils:gl__move_balls(BallsInitial),
 
-    %% Step 2: check collisions (log only, no effect)
-    check_collisions(Players1),
+    % 2) collisions
+    BallsAfterColl = egs_game_module_utils:gl__handle_balls_collisions(BallsMoved),
 
-    %% Step 3: broadcast if there are clients
+    % 3) Broadcast
     case maps:size(Clients) of
         0 -> ok;
         _ ->
-            Payload = encode_state(Players1),
+            Payload = egs_game_module_utils:encode__state(BallsAfterColl),
             broadcast(maps:keys(Clients), Payload)
     end,
 
+    % reschedule state update and boradcast after TICK time
     erlang:send_after(?TICK_MS, self(), tick),
-    {noreply, State#{players => Players1}};
+
+    % save state
+    {noreply, State#{balls => BallsAfterColl}};
 
 
-%%% Handles the death of a monitored WS handler process.
+%%% Handles death of a monitored websocket handler process
 %%% Triggered when a client crashes or disconnects without calling leave/2
-%%% (e.g. network interruption, browser crash).
-%%% Removes the player from both the clients and counters maps.
+%%% 
+%%% Removes the player from both the clients and balls maps
+%%% 
+%%% IMPORTANT NOTE: 
+%%%     this is also called on normal disconnection
+%%%     in that case it also executes, just doesn't find any matches
+%%%     they have already been removed from maps
 handle_info({'DOWN', _Ref, process, WsPid, Reason}, State) ->
     print_cli("{handle_info DOWN} ws_pid=~p reason=~p", [WsPid, Reason]),
-    case maps:find(WsPid, maps:get(clients, State)) of
+
+    % Get all clients state (map of WS_pid <-> PlayerId)
+    Clients = maps:get(clients, State),
+
+    % find the player_id linked to this websocket
+    case maps:find(WsPid, Clients) of
+
+        % on player found
         {ok, PlayerId} ->
-            Clients = maps:remove(WsPid, maps:get(clients, State)),
-            Players = maps:remove(PlayerId, maps:get(players, State)),
-            {noreply, State#{clients => Clients, players => Players}};
+            % remove from both maps
+            NewClients = maps:remove(WsPid, Clients),
+            Balls = maps:remove(PlayerId, maps:get(balls, State)),
+
+            % update state
+            {noreply, State#{clients => NewClients, balls => Balls}};
+
+        % on whatever error, keep the state
         error ->
             {noreply, State}
     end.
@@ -219,93 +307,10 @@ handle_call(_Req, _From, State) ->
     {reply, ok, State}.
 
 
-%%% Called when the game process is shutting down (normally or after a crash).
-%%% Removes this game from the ETS registry so no new clients can join
-%%% and stale entries are not left behind.
-terminate(_Reason, State) ->
-    print_cli("{terminate/2} game=~s shutting down", [maps:get(game_id, State)]),
-    egs_games_mgmt:unregister(maps:get(game_id, State)),
-    ok.
-
-%%% ---------------
-%%% Internal helpers
-%%% ---------------
-
-%%% Moves every ball by (dx * SPEED, dy * SPEED), clamped to arena bounds.
-%%% A ball with dx=dy=0 (just joined, no input yet) does not move.
-move_all(Players) ->
-    maps:map(fun(_PlayerId, Player) ->
-        X  = maps:get(x,  Player),
-        Y  = maps:get(y,  Player),
-        Dx = maps:get(dx, Player),
-        Dy = maps:get(dy, Player),
-        R  = maps:get(radius, Player),
-
-        %% Move, then clamp to arena so balls cannot leave the boundary.
-        NewX = clamp(X + Dx * ?SPEED, R, ?ARENA_W - R),
-        NewY = clamp(Y + Dy * ?SPEED, R, ?ARENA_H - R),
-        Player#{x => NewX, y => NewY}
-    end, Players).
-
-
-%%% Clamps Value between Min and Max.
-clamp(Value, Min, Max) ->
-    max(Min, min(Max, Value)).
-
-
-%%% Checks all pairs of balls for overlap and logs a warning.
-%%% Two balls collide when the distance between their centers
-%%% is less than the sum of their radii.
-%%% No gameplay effect for now.
-check_collisions(Players) ->
-    PlayerList = maps:to_list(Players),
-    check_pairs(PlayerList).
-
-check_pairs([]) -> ok;
-check_pairs([_]) -> ok;
-check_pairs([{IdA, A} | Rest]) ->
-    lists:foreach(fun({IdB, B}) ->
-        Dist = distance(A, B),
-        MinDist = maps:get(radius, A) + maps:get(radius, B),
-        case Dist < MinDist of
-            true ->
-                print_cli("{collision} ~s and ~s are overlapping (dist=~.1f)",
-                    [IdA, IdB, Dist]);
-            false ->
-                ok
-        end
-    end, Rest),
-    check_pairs(Rest).
-
-
-%%% Euclidean distance between the centers of two player maps.
-distance(A, B) ->
-    Dx = maps:get(x, A) - maps:get(x, B),
-    Dy = maps:get(y, A) - maps:get(y, B),
-    math:sqrt(Dx * Dx + Dy * Dy).
-
-
 %%% Sends the payload to all connected WS handler pids.
 broadcast(Pids, Payload) ->
     lists:foreach(fun(Pid) ->
         Pid ! {game_state, Payload}
     end, Pids).
 
-
-%%% Encodes the full player state as a JSON binary.
-%%% Output: {"players":{"alice":{"x":100.0,"y":200.0,"r":20},...}}
-encode_state(Players) ->
-    Fields = maps:fold(fun(PlayerId, Player, Acc) ->
-        Entry = io_lib:format(
-            "\"~s\":{\"x\":~.2f,\"y\":~.2f,\"r\":~p}",
-            [
-                PlayerId,
-                maps:get(x, Player),
-                maps:get(y, Player),
-                maps:get(radius, Player)
-            ]
-        ),
-        [Entry | Acc]
-    end, [], Players),
-    Joined = lists:join(",", Fields),
-    iolist_to_binary(["{\"players\":{", Joined, "}}"]).
+%%% endregion

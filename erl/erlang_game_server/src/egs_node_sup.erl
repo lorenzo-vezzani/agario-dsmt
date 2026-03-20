@@ -1,12 +1,9 @@
 %%% ---------------
 %%% Module description
 %%%
-%%% Top-level supervisor for the EGS node.
-%%% Owns the supervision tree and ensures that critical processes
-%%% are restarted if they crash.
-%%%
-%%% Children:
-%%%   - egs_games_mgmt: dynamic supervisor that manages game server processes
+%%% Top-level supervisor for the node.
+%%% 
+%%% Controls the egs_games_mgmt module, with restart policy
 %%% ---------------
 
 -module(egs_node_sup).
@@ -15,8 +12,7 @@
 
 
 %%% Module specific cli print
-print_cli(Text, Args) ->
-    io:format("[NODE SUP.][~p] " ++ Text ++ "~n", [self()] ++ Args).
+print_cli(Text, Args) -> egs_utils:print_cli("NODE SUPv", Text, Args).
 
 
 %%% Starts the top-level supervisor and registers it locally under
@@ -30,10 +26,10 @@ start_link() ->
 
 
 %%% Initializes the supervisor with its strategy and child specifications.
-%%% Called automatically by OTP after start_link/0.
+%%% Called automatically after start_link/0.
 init([]) ->
 
-    % supervisor options
+    % Supervisor options
     SupervisorSpec = #{
         %%% Strategy to adopt on children crash:
         %%      one_for_one: If a child crashes, only that child is restarted.
@@ -63,7 +59,7 @@ init([]) ->
             % restart: permanent: means it will always be restarted if it crashes
             restart  => permanent,
 
-            % TODO
+            % shutdown: 5 seconds to terminate cleanly before killing it
             shutdown => 5000
         }
     ],
