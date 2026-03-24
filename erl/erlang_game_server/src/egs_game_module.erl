@@ -2,14 +2,14 @@
 %%% Module description
 %%%
 %%% Game logic used by Game processes, one for each game
-%%% Spawned and supervised by egs_games_mgmt
+%%% Spawned and supervised by egs_supervisor
 %%%
 %%% State:
 %%%   game_id   - binary, the unique identifier of this game session
 %%%   balls     - map of PlayerId (binary) -> Ball entity (x, y, dx, dy, radius)
 %%%   clients   - map of WsPid (pid) -> PlayerId (binary)
 %%%
-%%% The process registers itself in egs_games_mgmt ETS table on init
+%%% The process registers itself in egs_supervisor ETS table on init
 %%% and unregisters on terminate, so it can always be found by game_id.
 %%% ---------------
 
@@ -34,7 +34,7 @@ print_cli(Text, Args) -> egs_utils:print_cli("GameLogic", Text, Args).
 
 
 %%% Starts a game process and links it to the calling supervisor.
-%%% Called by egs_games_mgmt via supervisor:start_child/2.
+%%% Called by egs_supervisor via supervisor:start_child/2.
 %%%
 %%% GameId - binary identifier for this game session, e.g. <<"game-1">>
 %%%
@@ -57,7 +57,7 @@ init(GameId) ->
     print_cli("{init/1} starting game=~s", [GameId]),
 
     % register game, for ETS table
-    egs_games_mgmt:register_game(GameId, self()),
+    egs_supervisor:register_game(GameId, self()),
 
     % Initializes tick update
     erlang:send_after(?TICK_MS, self(), tick),
@@ -75,7 +75,7 @@ init(GameId) ->
 %%% and stale entries are not left behind.
 terminate(_Reason, State) ->
     print_cli("{terminate/2} game=~s shutting down", [maps:get(game_id, State)]),
-    egs_games_mgmt:unregister_game(maps:get(game_id, State)),
+    egs_supervisor:unregister_game(maps:get(game_id, State)),
     ok.
 
 
@@ -91,7 +91,7 @@ join(GameId, PlayerId) ->
     print_cli("{join/2} game=~s player=~s", [GameId, PlayerId]),
 
     % lookup game by its id
-    case egs_games_mgmt:lookup(GameId) of
+    case egs_supervisor:lookup(GameId) of
 
         % game found, we can register ws handler
         {ok, Pid} ->
@@ -115,7 +115,7 @@ leave(GameId, PlayerId) ->
     print_cli("{leave/2} game=~s player=~s", [GameId, PlayerId]),
 
     % search for the specified game
-    case egs_games_mgmt:lookup(GameId) of
+    case egs_supervisor:lookup(GameId) of
 
         % cast 'leave' message
         {ok, Pid} -> gen_server:cast(Pid, {leave, self(), PlayerId});
@@ -220,7 +220,7 @@ handle_cast({leave, WsPid, PlayerId}, State) ->
 player_msg(GameId, PlayerId, Msg) ->
 
     % lookup pid of the game process
-    case egs_games_mgmt:lookup(GameId) of
+    case egs_supervisor:lookup(GameId) of
 
         % if found, send the raw message to the game process
         {ok, Pid} -> gen_server:cast(Pid, {player_msg, PlayerId, Msg});

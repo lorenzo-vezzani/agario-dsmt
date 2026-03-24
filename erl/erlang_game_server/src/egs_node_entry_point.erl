@@ -66,7 +66,8 @@ start(_StartType, _StartArgs) ->
 
 
     %% Start the top-level supervisor, which in turn starts the game mgmt supervisor
-    egs_node_sup:start_link().
+    % egs_node_sup:start_link().
+    egs_supervisor:start_link().
 
 
 %%% Stops the application, called automatically by OTP during shutdown.
