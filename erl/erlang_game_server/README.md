@@ -27,19 +27,20 @@ Il server si mette in ascolto sulla porta **49153** (TCP, HTTP/WebSocket).
 Per creare una partita prima che un client possa connettersi, dalla shell Erlang:
 
 ```erlang
-egs_games_mgmt:start_game(<<"game-1">>).
+egs_supervisor:start_game(<<"game-1">>).
 ```
 
 Altri comandi utili:
 ```erlang
 %% number of running games
-egs_games_mgmt:game_count().
+egs_supervisor:game_count().
 
 %% list all games with their pids
-egs_games_mgmt:list_games().
+egs_supervisor:list_games().
 
 %% stop a game
-egs_games_mgmt:stop_game(<<"game-1">>).
+egs_supervisor:stop_game(<<"game-1">>).
+```
 
 ---
 
@@ -149,8 +150,7 @@ Il client non deve inviare nessun messaggio esplicito di "leave": basta chiudere
 egs/
 ├── egs_app.src                  # Descrittore applicazione OTP
 ├── egs_node_entry_point.erl     # Entry point: avvia Cowboy e il supervisor radice
-├── egs_node_sup.erl             # Supervisor di primo livello
-├── egs_games_mgmt.erl           # Supervisor delle partite + registry ETS
+├── egs_supervisor.erl           # Supervisor + registry ETS
 ├── egs_game_module.erl          # Logica di una singola partita (gen_server)
 ├── egs_game_module_utils.erl    # Funzioni pure: fisica, collisioni, encode/decode JSON
 └── egs_websocket_handler.erl    # Handler WebSocket Cowboy (un processo per client)
@@ -167,25 +167,19 @@ Behaviour: `application`.
 Avviato automaticamente da OTP. Responsabilità:
 - Compila la routing table Cowboy: mappa `/ws/:game_id/:player_id` → `egs_websocket_handler`.
 - Avvia il listener HTTP/WebSocket sulla porta 49153 con `cowboy:start_clear/3`.
-- Avvia il supervisor radice `egs_node_sup`.
+- Avvia il supervisor `egs_supervisor`.
 
 In `stop/1` ferma il listener Cowboy (tutte le connessioni WebSocket vengono chiuse).
 
-### `egs_node_sup.erl` — Supervisor di primo livello
-
-Behaviour: `supervisor`.
-
-Supervisiona `egs_games_mgmt` con strategia **`one_for_one`**, restart permanente (5 restart max in 10 secondi). Se il gestore delle partite crasha, viene riavviato automaticamente. Non supervisiona direttamente né le partite né i WebSocket handler.
-
-### `egs_games_mgmt.erl` — Supervisor delle partite e registry
+### `egs_supervisor.erl` — Supervisor delle partite e registry
 
 Behaviour: `supervisor`.
 
 Doppio ruolo:
 
-**Come supervisor:** strategia **`simple_one_for_one`** con figli `temporary` (non riavviati in caso di crash). Tutti i processi-partita condividono la stessa spec: `egs_game_module:start_link/1`. Nuovi figli aggiunti dinamicamente tramite `supervisor:start_child/2`.
+**supervisor:** strategia **`simple_one_for_one`** con figli `temporary` (non riavviati in caso di crash). Tutti i processi-partita condividono la stessa spec: `egs_game_module:start_link/1`. Nuovi figli aggiunti dinamicamente tramite `supervisor:start_child/2`.
 
-**Come registry:** mantiene una tabella ETS named `game_proc_table` con coppie `{GameId, Pid}`. La tabella è `public` — i processi-partita possono scriverci direttamente. Espone:
+**registry:** mantiene una tabella ETS named `game_proc_table` con coppie `{GameId, Pid}`. La tabella è `public` — i processi-partita possono scriverci direttamente. Espone:
 
 | Funzione              | Descrizione                                     |
 |-----------------------|-------------------------------------------------|
@@ -212,8 +206,8 @@ Un processo per partita. Stato interno:
 ```
 
 Ciclo di vita:
-- **`init/1`**: registra il proprio PID nell'ETS tramite `egs_games_mgmt:register_game/2`, schedula il primo tick con `erlang:send_after/3`.
-- **`terminate/2`**: chiama `egs_games_mgmt:unregister_game/1` per pulire il registry.
+- **`init/1`**: registra il proprio PID nell'ETS tramite `egs_supervisor:register_game/2`, schedula il primo tick con `erlang:send_after/3`.
+- **`terminate/2`**: chiama `egs_supervisor:unregister_game/1` per pulire il registry.
 
 Cast gestiti (messaggi asincroni):
 
@@ -266,11 +260,10 @@ Un processo Cowboy per ogni client connesso. Non è un `gen_server` ma un proces
 └── egs_node_entry_point  (application callback — non è un processo supervisionato)
     ├── cowboy listener :ws_list  (porta 49153 — supervisione interna Cowboy/Ranch)
     │   └── egs_websocket_handler  (un processo per client WebSocket connesso)
-    └── egs_node_sup  (supervisor, one_for_one)
-        └── egs_games_mgmt  (supervisor, simple_one_for_one + ETS registry)
-            ├── egs_game_module [<<"game-1">>]  (gen_server, temporary)
-            ├── egs_game_module [<<"game-2">>]  (gen_server, temporary)
-            └── ...
+    └── egs_supervisor  (supervisor, simple_one_for_one + ETS registry)
+        ├── egs_game_module [<<"game-1">>]  (gen_server, temporary)
+        ├── egs_game_module [<<"game-2">>]  (gen_server, temporary)
+        └── ...
 ```
 
 ### Processi a runtime per ogni client connesso
@@ -297,7 +290,7 @@ egs_websocket_handler  →  frame WebSocket  →  Browser
 Ogni volta che `egs_websocket_handler` o `egs_game_module` ha bisogno di trovare il PID di una partita, esegue una lettura dalla tabella ETS:
 
 ```
-egs_games_mgmt:lookup(<<"game-1">>)
+egs_supervisor:lookup(<<"game-1">>)
   → ets:lookup(game_proc_table, <<"game-1">>)
   → [{<<"game-1">>, <0.123.0>}]
   → {ok, <0.123.0>}
@@ -353,7 +346,7 @@ self() ! tick
 {'DOWN', MonitorRef, process, DeadWsPid, Reason}
 ```
 
-### Messaggi `egs_games_mgmt` ↔ `egs_game_module`
+### Messaggi `egs_supervisor` ↔ `egs_game_module`
 
 La comunicazione avviene tramite ETS (non messaggi), eccetto durante la supervisione OTP standard (`supervisor:start_child`, `supervisor:terminate_child`).
 

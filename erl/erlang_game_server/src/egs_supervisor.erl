@@ -19,7 +19,7 @@
 %%% ---------------
 
 
--module(egs_games_mgmt).
+-module(egs_supervisor).
 -behaviour(supervisor).
 -export([
     start_link/0, 
@@ -40,7 +40,7 @@ dbg__crash_module() ->
     io:format("~s", [Arg]).
 
 % Module specific cli print
-print_cli(Text, Args) -> egs_utils:print_cli("GamesMGMT", Text, Args).
+print_cli(Text, Args) -> egs_utils:print_cli("SUPERVIS.", Text, Args).
 
 
 %%% Starts this supervisor and registers it locally under the module name.
