@@ -22,7 +22,13 @@
 
 
 % Client update refresh rate
--define(TICK_MS,    20).
+-define(TICK_MS, 20).
+% Food update refresh rate
+-define(FOOD_UPDATE_TICK_MS, 1000).
+
+-define(MAX_FOOD_COUNT, 100).
+
+-define(STATE_FOOD, foods).
 
 
 %%% ---------------------------
@@ -61,12 +67,14 @@ init(GameId) ->
 
     % Initializes tick update
     erlang:send_after(?TICK_MS, self(), tick),
+    erlang:send_after(?FOOD_UPDATE_TICK_MS, self(), food),
 
     % initializes state
     {ok, #{
         game_id => GameId,  % init to the passed GameId
         clients => #{},     % no clients yet
-        balls   => #{}      % balls empty
+        balls   => #{},     % balls empty
+        ?STATE_FOOD => egs_game_module_utils:gl__spawn_random_food_map(20) % food to eat
     }}.
 
 
@@ -242,10 +250,11 @@ player_msg(GameId, PlayerId, Msg) ->
 %%% Handles the periodic tick:
 %%% 1) Move all balls
 %%% 2) check for collisions
-%%% 3) Broadcast updated state to all clients
+%%% final) Broadcast updated state to all clients
 handle_info(tick, State) ->
     BallsInitial = maps:get(balls, State),
     Clients = maps:get(clients, State),
+    Food = maps:get(?STATE_FOOD, State),
 
     % 1) move all balls
     BallsMoved = egs_game_module_utils:gl__move_balls(BallsInitial),
@@ -253,11 +262,14 @@ handle_info(tick, State) ->
     % 2) collisions
     BallsAfterColl = egs_game_module_utils:gl__handle_balls_collisions(BallsMoved),
 
-    % 3) Broadcast
+    % 3) eat food
+    {BallsAfterEating, FoodAfterEating} = egs_game_module_utils:gl__eat_food(BallsAfterColl, Food),
+
+    % finally) Broadcast
     case maps:size(Clients) of
         0 -> ok;
         _ ->
-            Payload = egs_game_module_utils:encode__state(BallsAfterColl),
+            Payload = egs_game_module_utils:encode__state(BallsAfterEating, FoodAfterEating),
             broadcast(maps:keys(Clients), Payload)
     end,
 
@@ -265,8 +277,34 @@ handle_info(tick, State) ->
     erlang:send_after(?TICK_MS, self(), tick),
 
     % save state
-    {noreply, State#{balls => BallsAfterColl}};
+    {noreply, State#{
+        balls => BallsAfterEating,
+        ?STATE_FOOD => FoodAfterEating
+    }};
 
+%%% Implements periodic food spawning
+handle_info(food, State) ->
+
+    % reschedule food update
+    erlang:send_after(?FOOD_UPDATE_TICK_MS, self(), food),
+
+    FoodMap = maps:get(?STATE_FOOD, State),
+
+    case maps:size(FoodMap) < ?MAX_FOOD_COUNT of
+        true ->
+            % insert new food in map
+            {FoodId, FoodElem} = egs_game_module_utils:gl__spawn_random_food(),
+            FoodUpdated = maps:put(FoodId, FoodElem, FoodMap),
+
+            % save state
+            {noreply, State#{
+                ?STATE_FOOD => FoodUpdated
+            }};
+
+        false ->
+            % do not change state
+            {noreply, State}
+    end;
 
 %%% Handles death of a monitored websocket handler process
 %%% Triggered when a client crashes or disconnects without calling leave/2

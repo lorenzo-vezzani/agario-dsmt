@@ -13,6 +13,7 @@
 %%% ---------------
 
 -module(egs_websocket_handler).
+-behaviour(cowboy_websocket_handler).
 -export([
     init/2, 
     websocket_init/1, 
