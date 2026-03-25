@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EGS — Erlang Game Server</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --green:      #00ff88;
+  --green-dim:  rgba(0, 255, 136, 0.55);
+  --green-glow: rgba(0, 255, 136, 0.25);
+  --red:        #ff2244;
+  --red-glow:   rgba(255, 34, 68, 0.4);
+  --bg:         #040c07;
+  --panel-bg:   rgba(2, 18, 8, 0.95);
+  --border:     rgba(0, 255, 136, 0.2);
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'Share Tech Mono', monospace;
+  cursor: none;
+  overflow: hidden;
+  /* Global grid texture */
+  background-image:
+    linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ─── Mouse dot ──────────────────────────────────────── */
+#mouse-dot {
+  position: fixed;
+  width: 13px; height: 13px;
+  background: var(--red);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--red), 0 0 22px var(--red-glow);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  will-change: left, top;
+}
+
+/* ─── LOGIN SCREEN ───────────────────────────────────── */
+#login-screen {
+  position: absolute; inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  padding: 52px 60px 48px;
+  width: min(460px, 90vw);
+  box-shadow:
+    0 0 0 1px rgba(0,255,136,0.06),
+    0 0 50px var(--green-glow),
+    inset 0 1px 0 rgba(0,255,136,0.07);
+}
+
+/* Scanlines overlay */
+.panel::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 3px,
+    rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px
+  );
+  pointer-events: none;
+}
+
+/* Corner ticks */
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(0,255,136,0.08);
+  pointer-events: none;
+}
+
+.logo {
+  font-family: 'Orbitron', monospace;
+  font-size: 3.2rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: var(--green);
+  text-shadow: 0 0 20px var(--green), 0 0 60px var(--green-glow), 0 0 100px var(--green-glow);
+  animation: flicker 8s infinite;
+}
+
+@keyframes flicker {
+  0%, 95%, 97%, 99%, 100% { opacity: 1; }
+  96%, 98% { opacity: 0.85; }
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 0.62rem;
+  letter-spacing: 0.38em;
+  color: rgba(0,255,136,0.35);
+  text-transform: uppercase;
+  margin-top: 4px;
+  margin-bottom: 40px;
+}
+
+.field + .field { margin-top: 18px; }
+
+.field-label {
+  display: block;
+  font-size: 0.6rem;
+  letter-spacing: 0.3em;
+  color: rgba(0,255,136,0.5);
+  text-transform: uppercase;
+  margin-bottom: 7px;
+}
+
+.field-label .marker { color: var(--green); margin-right: 6px; }
+
+.field-input {
+  width: 100%;
+  background: rgba(0,255,136,0.03);
+  border: 1px solid rgba(0,255,136,0.18);
+  color: var(--green);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.95rem;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  caret-color: var(--green);
+}
+
+.field-input:focus {
+  border-color: rgba(0,255,136,0.55);
+  background: rgba(0,255,136,0.06);
+  box-shadow: 0 0 14px var(--green-glow);
+}
+
+.field-input::placeholder { color: rgba(0,255,136,0.18); }
+
+.connect-btn {
+  display: block;
+  width: 100%;
+  margin-top: 32px;
+  padding: 14px 20px;
+  background: transparent;
+  border: 1px solid rgba(0,255,136,0.5);
+  color: var(--green);
+  font-family: 'Orbitron', monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  cursor: none;
+  transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.connect-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(0,255,136,0.06), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.4s;
+}
+
+.connect-btn:hover::before { transform: translateX(100%); }
+
+.connect-btn:hover {
+  background: rgba(0,255,136,0.1);
+  border-color: var(--green);
+  box-shadow: 0 0 24px var(--green-glow);
+}
+
+.connect-btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.error-box {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255,34,68,0.35);
+  background: rgba(255,34,68,0.06);
+  color: #ff4466;
+  font-size: 0.77rem;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  display: none;
+}
+
+.error-box.visible {
+  display: block;
+  animation: slideIn 0.25s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── GAME SCREEN ────────────────────────────────────── */
+#game-screen {
+  position: absolute; inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+#game-screen.active { display: flex; }
+
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 14px;
+}
+
+.hud-info {
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  color: rgba(0,255,136,0.45);
+  line-height: 1.8;
+}
+
+.hud-info b { color: var(--green); font-weight: normal; }
+
+.hud-players {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  color: rgba(0,255,136,0.35);
+}
+
+.hud-players b { color: var(--green); }
+
+.quit-btn {
+  padding: 7px 22px;
+  background: transparent;
+  border: 1px solid rgba(255,34,68,0.4);
+  color: #ff4466;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: none;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.quit-btn:hover {
+  background: rgba(255,34,68,0.1);
+  box-shadow: 0 0 16px var(--red-glow);
+}
+
+#arena-canvas {
+  border: 1px solid rgba(0,255,136,0.18);
+  box-shadow:
+    0 0 0 1px rgba(0,255,136,0.05),
+    0 0 40px var(--green-glow),
+    0 0 100px rgba(0,255,136,0.06);
+  display: block;
+  /* canvas is below the mouse dot */
+}
+
+.logout-form {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+}
+
+.logout-btn {
+    width: 74px;
+    height: 34px;
+    border: 1px solid rgba(255,34,68,0.4);
+    background: transparent;
+    color: #ff4466;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.8rem;
+    cursor: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.logout-btn:hover {
+    background: rgba(255,34,68,0.1);
+    box-shadow: 0 0 12px rgba(255,34,68,0.4);
+}
+</style>
+</head>
+<body>
+
+<!-- Always-visible mouse dot -->
+<div id="mouse-dot"></div>
+
+<!-- ═══ LOGIN SCREEN ════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="panel">
+    <div class="logo">EGS</div>
+    <div class="subtitle">Erlang Game Server</div>
+
+    <div class="field">
+      <label class="field-label" for="inp-host"><span class="marker">▸</span>Host : Port</label>
+      <input class="field-input" id="inp-host" type="text"
+             value="localhost:49153" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label class="field-label" for="inp-game"><span class="marker">▸</span>Game ID</label>
+      <input class="field-input" id="inp-game" type="text"
+             placeholder="game-1" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label class="field-label" for="inp-player"><span class="marker">▸</span>Player ID</label>
+      <input class="field-input" id="inp-player" type="text"
+             placeholder="alice" autocomplete="off" spellcheck="false">
+    </div>
+
+    <button class="connect-btn" id="connect-btn">▶ Connect</button>
+    <div class="error-box" id="error-box"></div>
+
+    <form th:action="@{/logout}" method="post" class="logout-form">
+        <button type="submit" class="logout-btn">✕ Logout</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ GAME SCREEN ═════════════════════════════════════ -->
+<div id="game-screen">
+  <div class="hud" id="hud">
+    <div class="hud-info">
+      GAME <b id="hud-game">—</b> &nbsp;·&nbsp; PLAYER <b id="hud-player">—</b>
+    </div>
+    <div class="hud-players">PLAYERS: <b id="hud-count">0</b></div>
+    <button class="quit-btn" id="quit-btn">✕ Quit</button>
+  </div>
+  <canvas id="arena-canvas"></canvas>
+</div>
+
+<script>
+"use strict";
+
+// ──────────────────────────────────────────────────────────
+// CONSTANTS
+// ──────────────────────────────────────────────────────────
+const ARENA_W = 2000;
+const ARENA_H = 2000;
+
+// ──────────────────────────────────────────────────────────
+// STATE
+// ──────────────────────────────────────────────────────────
+let ws           = null;
+let myGameId     = '';
+let myPlayerId   = '';
+let latestBalls  = [];        // last parsed balls from server
+let latestFood   = [];
+let mouseX       = 0;         // viewport coords
+let mouseY       = 0;
+let everConnected = false;    // received at least one WS message
+let sendTimer    = null;
+let rafId        = null;
+
+// ──────────────────────────────────────────────────────────
+// DOM REFS
+// ──────────────────────────────────────────────────────────
+const $mouseDot    = document.getElementById('mouse-dot');
+const $loginScreen = document.getElementById('login-screen');
+const $gameScreen  = document.getElementById('game-screen');
+const $canvas      = document.getElementById('arena-canvas');
+const ctx          = $canvas.getContext('2d');
+const $errorBox    = document.getElementById('error-box');
+const $connectBtn  = document.getElementById('connect-btn');
+const $quitBtn     = document.getElementById('quit-btn');
+const $hudGame     = document.getElementById('hud-game');
+const $hudPlayer   = document.getElementById('hud-player');
+const $hudCount    = document.getElementById('hud-count');
+
+// ──────────────────────────────────────────────────────────
+// MOUSE TRACKING
+// ──────────────────────────────────────────────────────────
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  $mouseDot.style.left = mouseX + 'px';
+  $mouseDot.style.top  = mouseY + 'px';
+});
+
+// ──────────────────────────────────────────────────────────
+// CANVAS SIZING  (square, fits viewport)
+// ──────────────────────────────────────────────────────────
+function resizeCanvas() {
+  const hudH = document.getElementById('hud').offsetHeight + 10 + 20; // gap + bottom margin
+  const avW  = window.innerWidth  - 28;
+  const avH  = window.innerHeight - hudH - 28;
+  const side = Math.floor(Math.min(avW, avH));
+  $canvas.width  = side;
+  $canvas.height = side;
+}
+
+window.addEventListener('resize', resizeCanvas);
+
+// ──────────────────────────────────────────────────────────
+// COORDINATE HELPERS
+// ──────────────────────────────────────────────────────────
+// Arena units → canvas pixels
+function a2c(ax, ay) {
+  return [
+    (ax / ARENA_W) * $canvas.width,
+    (ay / ARENA_H) * $canvas.height,
+  ];
+}
+
+// Mouse viewport coords → arena units
+function mouseToArena() {
+  const r = $canvas.getBoundingClientRect();
+  return [
+    ((mouseX - r.left) / $canvas.width)  * ARENA_W,
+    ((mouseY - r.top)  / $canvas.height) * ARENA_H,
+  ];
+}
+
+// Is mouse inside canvas bounding rect?
+function mouseInCanvas() {
+  const r = $canvas.getBoundingClientRect();
+  return mouseX >= r.left && mouseX <= r.right &&
+         mouseY >= r.top  && mouseY <= r.bottom;
+}
+
+// ──────────────────────────────────────────────────────────
+// DIRECTION COMPUTATION
+// ──────────────────────────────────────────────────────────
+function computeDir() {
+  const me = latestBalls.find(b => b.id === myPlayerId);
+  if (!me) return [0, 0];
+
+  const [mx, my] = mouseToArena();
+  const vx = mx - me.x;
+  const vy = my - me.y;
+  const len = Math.hypot(vx, vy);
+  if (len < 0.5) return [0, 0];
+  return [vx / len, vy / len];
+}
+
+// ──────────────────────────────────────────────────────────
+// WS SEND
+// ──────────────────────────────────────────────────────────
+function sendDir() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const [dx, dy] = computeDir();
+  ws.send(`{"dx":${dx.toFixed(4)},"dy":${dy.toFixed(4)}}`);
+}
+
+// ──────────────────────────────────────────────────────────
+// RENDERING
+// ──────────────────────────────────────────────────────────
+
+// Deterministic hue from an ID string
+function idToHue(id) {
+  let h = 5381;
+  for (let i = 0; i < id.length; i++) h = ((h * 33) ^ id.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+
+// Pre-built color palette per player (cached)
+const colorCache = new Map();
+function getColor(id) {
+  if (!colorCache.has(id)) {
+    const hue = idToHue(id);
+    colorCache.set(id, {
+      fill:  `hsl(${hue},90%,58%)`,
+      fill2: `hsl(${hue},70%,32%)`,
+      glow:  `hsla(${hue},100%,60%,0.18)`,
+      ring:  `hsla(${hue},100%,70%,0.65)`,
+      label: `hsl(${hue},100%,82%)`,
+    });
+  }
+  return colorCache.get(id);
+}
+
+function renderFrame() {
+  const W = $canvas.width, H = $canvas.height;
+  if (!W || !H) { rafId = requestAnimationFrame(renderFrame); return; }
+
+  const scale = W / ARENA_W;
+
+  // ── Background
+  ctx.fillStyle = '#020d04';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Arena grid
+  ctx.strokeStyle = 'rgba(0,255,136,0.05)';
+  ctx.lineWidth = 1;
+  const GRID = 10;
+  const gs = W / GRID;
+  for (let i = 0; i <= GRID; i++) {
+    const p = Math.round(i * gs) + 0.5;
+    ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(W, p); ctx.stroke();
+  }
+
+  // ── Arena border
+  ctx.strokeStyle = 'rgba(0,255,136,0.28)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(1, 1, W - 2, H - 2);
+
+  // ── Find my ball (for direction line)
+  const myBall = latestBalls.find(b => b.id === myPlayerId);
+
+  // ── Direction line (mouse → my ball) – only if mouse is inside canvas
+  if (myBall && mouseInCanvas()) {
+    const [bx, by] = a2c(myBall.x, myBall.y);
+    const r = $canvas.getBoundingClientRect();
+    const mx = mouseX - r.left;
+    const my = mouseY - r.top;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(mx, my);
+    ctx.strokeStyle = 'rgba(255,34,68,0.18)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 7]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // ── Food dots
+    for (const dot of latestFood) {
+        const [fx, fy] = a2c(dot.x, dot.y);
+        const fr = 4 * scale;
+
+        // Glow
+        const fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr * 3);
+        fg.addColorStop(0, 'rgba(0,255,136,0.35)');
+        fg.addColorStop(1, 'transparent');
+        ctx.beginPath(); ctx.arc(fx, fy, fr * 3, 0, Math.PI * 2);
+        ctx.fillStyle = fg; ctx.fill();
+
+        // Dot
+        ctx.beginPath(); ctx.arc(fx, fy, fr, 0, Math.PI * 2);
+        ctx.fillStyle = '#00ff88';
+        ctx.fill();
+    }
+
+  // ── Balls
+  for (const ball of latestBalls) {
+    const [cx, cy] = a2c(ball.x, ball.y);
+    const r  = (ball.r || 20) * scale;
+    const isMe = ball.id === myPlayerId;
+    const col = getColor(ball.id);
+
+    // Outer glow halo
+    const grd = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 2.8);
+    grd.addColorStop(0, col.glow);
+    grd.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.arc(cx, cy, r * 2.8, 0, Math.PI * 2);
+    ctx.fillStyle = grd; ctx.fill();
+
+    // Body gradient
+    const bg = ctx.createRadialGradient(cx - r*0.3, cy - r*0.35, r*0.05, cx, cy, r);
+    bg.addColorStop(0, col.fill);
+    bg.addColorStop(1, col.fill2);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = bg;
+    ctx.fill();
+
+    // Specular highlight
+    ctx.beginPath(); ctx.arc(cx - r*0.28, cy - r*0.3, r*0.22, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fill();
+
+    // Own-player ring
+    if (isMe) {
+      ctx.beginPath(); ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = col.ring;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Second pulsing ring (CSS can't do this on canvas, use a simple alpha trick)
+      ctx.beginPath(); ctx.arc(cx, cy, r + 9, 0, Math.PI * 2);
+      ctx.strokeStyle = col.ring.replace('0.65', '0.2');
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Label inside ball
+    const fontSize = Math.max(9, Math.min(r * 0.85, 18));
+    ctx.font = `bold ${fontSize}px "Share Tech Mono", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = isMe ? '#fff' : 'rgba(255,255,255,0.82)';
+    ctx.fillText(ball.id.length > 7 ? ball.id.slice(0, 6) + '…' : ball.id, cx, cy);
+
+    // "YOU" tag above for own player
+    if (isMe) {
+      const tagSize = Math.max(8, r * 0.55);
+      ctx.font = `${tagSize}px "Share Tech Mono", monospace`;
+      ctx.fillStyle = col.label;
+      ctx.fillText('YOU', cx, cy - r - tagSize - 2);
+    }
+  }
+
+  // ── Mouse on canvas: draw red dot on top of everything
+  if (mouseInCanvas()) {
+    const r = $canvas.getBoundingClientRect();
+    const mx = mouseX - r.left;
+    const my = mouseY - r.top;
+    // Outer glow
+    const mg = ctx.createRadialGradient(mx, my, 0, mx, my, 18);
+    mg.addColorStop(0, 'rgba(255,34,68,0.3)');
+    mg.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.arc(mx, my, 18, 0, Math.PI * 2);
+    ctx.fillStyle = mg; ctx.fill();
+    // Dot
+    ctx.beginPath(); ctx.arc(mx, my, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff2244'; ctx.fill();
+  }
+
+  $hudCount.textContent = latestBalls.length;
+  rafId = requestAnimationFrame(renderFrame);
+}
+
+// ──────────────────────────────────────────────────────────
+// SCREEN TRANSITIONS
+// ──────────────────────────────────────────────────────────
+function showError(msg) {
+  $errorBox.textContent = '> ' + msg;
+  $errorBox.classList.add('visible');
+  $connectBtn.disabled  = false;
+  $connectBtn.textContent = '▶ Connect';
+}
+
+function enterGame() {
+  everConnected = true;
+  $hudGame.textContent   = myGameId;
+  $hudPlayer.textContent = myPlayerId;
+  $errorBox.classList.remove('visible');
+  $loginScreen.style.display = 'none';
+  $gameScreen.classList.add('active');
+  resizeCanvas();
+  rafId = requestAnimationFrame(renderFrame);
+  sendTimer = setInterval(sendDir, 20);
+}
+
+function leaveGame(errMsg) {
+  cancelAnimationFrame(rafId);
+  clearInterval(sendTimer);
+  everConnected = false;
+  latestBalls   = [];
+  latestFood   = [];
+  $gameScreen.classList.remove('active');
+  $loginScreen.style.display = 'flex';
+  $connectBtn.disabled = false;
+  $connectBtn.textContent = '▶ Connect';
+  if (errMsg) showError(errMsg);
+  else $errorBox.classList.remove('visible');
+}
+
+// ──────────────────────────────────────────────────────────
+// WEBSOCKET CONNECT
+// ──────────────────────────────────────────────────────────
+function connect() {
+  const host   = document.getElementById('inp-host').value.trim();
+  const gameId = document.getElementById('inp-game').value.trim();
+  const playId = document.getElementById('inp-player').value.trim();
+
+  if (!host || !gameId || !playId) {
+    showError('ERROR: tutti i campi sono obbligatori');
+    return;
+  }
+
+  $errorBox.classList.remove('visible');
+  $connectBtn.disabled = true;
+  $connectBtn.textContent = '… Connecting';
+
+  myGameId   = gameId;
+  myPlayerId = playId;
+  everConnected = false;
+
+  const url = `ws://${host}/ws/${encodeURIComponent(gameId)}/${encodeURIComponent(playId)}`;
+
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    showError(`ERROR: indirizzo non valido — ${e.message}`);
+    return;
+  }
+
+  // onopen: don't switch screens yet, wait for first message
+  ws.onopen = () => { /* waiting… */ };
+
+  ws.onmessage = e => {
+    let data;
+    try { data = JSON.parse(e.data); } catch (_) { return; }
+    if (Array.isArray(data.balls)) latestBalls = data.balls;
+    if (Array.isArray(data.food))  latestFood  = data.food;
+
+    if (!everConnected) enterGame();
+  };
+
+  ws.onclose = e => {
+    if (!everConnected) {
+      // Never received a frame — connection failed
+      if (e.code === 1008) {
+        showError(`ERROR: game "${myGameId}" non trovato sul server`);
+      } else if (e.code === 1006) {
+        showError(`ERROR: impossibile connettersi a ${host}`);
+      } else {
+        showError(`ERROR: connessione rifiutata (code ${e.code})`);
+      }
+    } else {
+      // Was playing, got disconnected
+      leaveGame(`DISCONNECTED: codice ${e.code}`);
+    }
+  };
+
+  ws.onerror = () => { /* onclose fires right after — handled there */ };
+}
+
+// ──────────────────────────────────────────────────────────
+// QUIT
+// ──────────────────────────────────────────────────────────
+$quitBtn.addEventListener('click', () => {
+  if (ws) {
+    ws.onclose = null;  // suppress disconnect error on intentional quit
+    ws.close(1000, 'quit');
+  }
+  leaveGame(null);
+});
+
+// ──────────────────────────────────────────────────────────
+// KEYBOARD
+// ──────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && $loginScreen.style.display !== 'none') connect();
+});
+
+$connectBtn.addEventListener('click', connect);
+</script>
+</body>
+</html>

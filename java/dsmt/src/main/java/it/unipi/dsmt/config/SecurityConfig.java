@@ -25,13 +25,20 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())               // disable Cross-Site Request Forgery
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/index.html").permitAll()
-                        .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
-                        .requestMatchers("/auth/**").permitAll()                    // all apis require auth except login and register
-                        .anyRequest().authenticated()                                 // all other apis must be authenticated
-                ).addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                        .requestMatchers("/login", "/css/**", "/signup", "/auth/signup").permitAll()
+                        .anyRequest().authenticated()
+                )
+                .formLogin(form -> form
+                        .loginPage("/login")                // tua pagina
+                        .loginProcessingUrl("/auth/login")       // dove invia il form
+                        .defaultSuccessUrl("/home", true)   // redirect dopo login OK
+                        .failureUrl("/login?error=true")    // se fallisce
+                        .permitAll()
+                )
+                .logout(logout -> logout
+                        .logoutSuccessUrl("/login?logout")
+                );
 
         return http.build();
     }

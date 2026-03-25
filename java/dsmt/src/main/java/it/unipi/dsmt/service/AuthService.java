@@ -1,35 +1,66 @@
 package it.unipi.dsmt.service;
 
 import it.unipi.dsmt.dto.LoginRequestDTO;
+import it.unipi.dsmt.dto.RegisterRequestDTO;
+import it.unipi.dsmt.exception.EmailAlreadyExistsException;
 import it.unipi.dsmt.exception.IncorrectPasswordException;
 import it.unipi.dsmt.exception.UserNotFoundException;
+import it.unipi.dsmt.exception.UsernameAlreadyExistsException;
 import it.unipi.dsmt.model.User;
 import it.unipi.dsmt.repository.UserRepository;
+import jakarta.transaction.Transactional;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.ui.Model;
 
 @Service
-public class AuthService {
-    private final UserRepository repo;
-    private final PasswordEncoder passwordEncoder;
+public class AuthService implements UserDetailsService {
+    @Autowired
+    private UserRepository userRepository;
 
-    public AuthService(UserRepository repo, PasswordEncoder passwordEncoder) {
-        this.repo = repo;
-        this.passwordEncoder = passwordEncoder;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+
+    @Override
+    public @NotNull UserDetails loadUserByUsername(@NotNull String username) throws UsernameNotFoundException {
+        User user = userRepository.findByUsername(username);
+        if (user == null) {
+            throw new UsernameNotFoundException(username);
+        }
+
+        // conversion to UserDetails for automatic authentication
+        return org.springframework.security.core.userdetails.User.builder()
+                .username(user.getUsername())
+                .password(user.getPassword())
+                .roles("USER")
+                .build();
     }
 
-    public void authUser(LoginRequestDTO dto) {
-        // retrieve user with the given username
-        User foundUser = repo.findByUsername(dto.getUsername());
-        if (foundUser == null) {
-            throw new UserNotFoundException();
+    @Transactional
+    public void signup(String username, String email, String password) {
+        if (userRepository.existsByUsername(username)) {
+            throw new UsernameAlreadyExistsException();
+        }
+        if (userRepository.existsByEmail(email)) {
+            throw new EmailAlreadyExistsException();
         }
 
-        // check password
-        if (!passwordEncoder.matches(dto.getPassword(), foundUser.getPassword())) {
-            throw new IncorrectPasswordException();
-        }
+        // crea utente e salva password codificata
+        User user = new User();
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setPassword(passwordEncoder.encode(password));
+        userRepository.save(user);
 
-        // if we make it here, the authentication is complete
+        System.out.println("SALVATO");
+
+        // redirect al login
+
     }
 }

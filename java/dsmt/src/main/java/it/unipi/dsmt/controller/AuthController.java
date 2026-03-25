@@ -1,48 +1,33 @@
 package it.unipi.dsmt.controller;
 
-import it.unipi.dsmt.dto.LoginRequestDTO;
-import it.unipi.dsmt.dto.LoginResponseDTO;
-import it.unipi.dsmt.dto.RegisterRequestDTO;
-import it.unipi.dsmt.dto.RegisterResponseDTO;
-import it.unipi.dsmt.model.User;
+import it.unipi.dsmt.exception.EmailAlreadyExistsException;
+import it.unipi.dsmt.exception.UsernameAlreadyExistsException;
 import it.unipi.dsmt.service.AuthService;
-import it.unipi.dsmt.service.JwtService;
-import it.unipi.dsmt.service.UserService;
-import org.jetbrains.annotations.NotNull;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 @RequestMapping("/auth")
 class AuthController {
-    private final UserService service;
-    private final AuthService authService;
-    private final JwtService jwtService;
+    @Autowired
+    AuthService authService;
 
-    public AuthController(UserService service, AuthService authService, JwtService jwtService) {
-        this.service = service;
-        this.authService = authService;
-        this.jwtService = jwtService;
-    }
-
-    @PostMapping("/register")
-    public ResponseEntity<@NotNull RegisterResponseDTO> createUser(@Valid @RequestBody RegisterRequestDTO dto) {
-        User savedUser = service.createUser(dto);
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(new RegisterResponseDTO("ok", savedUser.getUsername()));
-    }
-
-    @PostMapping("/login")
-    public ResponseEntity<@NotNull LoginResponseDTO> login(@Valid @RequestBody LoginRequestDTO dto) {
-        authService.authUser(dto);
-        return ResponseEntity
-                .status(HttpStatus.OK)
-                .body(new LoginResponseDTO("ok", jwtService.generateToken(dto.getUsername())));
+    @PostMapping("/signup")
+    public String signup(@RequestParam("username") String username, @RequestParam("email") String email, @RequestParam("password") String password, Model model) {
+        try {
+            authService.signup(username, email, password);
+        } catch (UsernameAlreadyExistsException e) {
+            model.addAttribute("error", "Username già esistente!");
+            return "signup";
+        }
+        catch (EmailAlreadyExistsException e) {
+            model.addAttribute("error", "Email già esistente!");
+            return "signup";
+        }
+        return "redirect:/login";
     }
 }
