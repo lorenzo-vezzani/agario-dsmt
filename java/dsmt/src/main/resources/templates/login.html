@@ -252,9 +252,14 @@
 
         <!-- ERROR & LOGOUT MESSAGES -->
         <div class="error-box" th:classappend="${param.error} ? ' visible'"
-             th:text="${param.error} ? 'Errore: username o password errati' : ''"></div>
+             th:text="${param.error} ? 'Error: wrong username or password' : ''"></div>
         <div class="error-box" th:classappend="${param.logout} ? ' visible'"
-             th:text="${param.logout} ? 'Hai effettuato il logout con successo' : ''"></div>
+             th:text="${param.logout} ? 'Logout successful' : ''"></div>
+        <div class="error-box"
+             th:classappend="${param.signupSuccess} ? ' visible'"
+             th:text="${param.signupSuccess} ? 'Signup successful, please log in' : ''"
+             style="border-color: rgba(0,255,136,0.35); background: rgba(0,255,136,0.06); color: #00ff88;">
+        </div>
     </div>
 </div>
 

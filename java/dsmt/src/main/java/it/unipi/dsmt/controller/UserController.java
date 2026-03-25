@@ -1,7 +1,6 @@
 package it.unipi.dsmt.controller;
 
 import it.unipi.dsmt.dto.GetUserResponseDTO;
-import it.unipi.dsmt.dto.LoginResponseDTO;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

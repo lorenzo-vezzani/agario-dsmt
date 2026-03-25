@@ -1,7 +1,5 @@
 package it.unipi.dsmt.controller;
 
-import it.unipi.dsmt.config.AgarioConfig;
-import it.unipi.dsmt.dto.LoginResponseDTO;
 import it.unipi.dsmt.service.LobbyService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
