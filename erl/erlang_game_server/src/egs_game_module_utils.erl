@@ -23,13 +23,15 @@
     gl__handle_balls_collisions/1,
     gl__eat_food/2,
     decode__direction_update/1,
-    encode__state/2
+    encode__state/2,
+    encode__gameover/1
 ]).
 
 -define(ARENA_W,    2000.0).
 -define(ARENA_H,    2000.0).
 -define(BALL_R,     20.0).
--define(SPEED,      10.0). % reference speed
+-define(SPEED_MAX,  10.0). % max speed, when ball is at minimum radius
+-define(SPEED_MIN,  1.0). % min speed, when ball has big radius
 
 -define(R_INC_STEP, 2.0). % ball radius increase step, when eating food
 -define(FOOD_MARGIN, 10.0). % margin from border of a food at spawn
@@ -47,8 +49,10 @@ gl__spawn_random_ball() ->
         x => rand:uniform() * ?ARENA_W,
         y => rand:uniform() * ?ARENA_H,
         dx => 0.0, dy => 0.0, % no direction
-        radius => ?BALL_R
+        radius => ?BALL_R,
+        speed => ?SPEED_MAX
     }.
+
 
 %%% returns a list of #Count randomly spawned balls
 gl__spawn_random_food_map(Count) ->
@@ -61,10 +65,16 @@ gl__spawn_random_food_n(Count, Accum) ->
 
 %%% Spwan a new random food food
 gl__spawn_random_food() ->
+    Values = [-5, -1, 1, 5],
+    FoodValue = lists:nth(rand:uniform(length(Values)), Values),
+    gl__spawn_random_food(FoodValue).
+
+gl__spawn_random_food(FoodValue) ->
     Id = erlang:unique_integer([positive, monotonic]),
     Food = #{
         x => rand:uniform() * (?ARENA_W - 2*?FOOD_MARGIN) + ?FOOD_MARGIN,
-        y => rand:uniform() * (?ARENA_H - 2*?FOOD_MARGIN) + ?FOOD_MARGIN
+        y => rand:uniform() * (?ARENA_H - 2*?FOOD_MARGIN) + ?FOOD_MARGIN,
+        value => FoodValue
     },
     {Id, Food}.
 
@@ -98,10 +108,11 @@ gl__move_ball_single(Ball) ->
     OldY = maps:get(y,  Ball),
     Dx = maps:get(dx, Ball),
     Dy = maps:get(dy, Ball),
+    Speed = maps:get(speed, Ball),
     
     % Move and clamp
-    NewX = clamp(OldX + Dx * ?SPEED, 0.0, ?ARENA_W),
-    NewY = clamp(OldY + Dy * ?SPEED, 0.0, ?ARENA_H),
+    NewX = clamp(OldX + Dx * Speed, 0.0, ?ARENA_W),
+    NewY = clamp(OldY + Dy * Speed, 0.0, ?ARENA_H),
     
     % NOTE: if we want to ensure the ENITRE ball is within boundaries,
     % we'll have to add R to the clamp { R  = maps:get(radius, Ball) }
@@ -118,20 +129,21 @@ gl__move_ball_single(Ball) ->
 %%% ---------------------------
 
 %%% Check all possibile pairs of ball for a collision
+%%% returns {NewBallMap, List of collisions: {Eater, Killed}}
 gl__handle_balls_collisions(Balls) ->
     % switch from maps to list, then call gl__check_collisions_list
-    BallsKilled = gl__check_collisions_list(maps:to_list(Balls), []),
+    {BallsKilled, Collisions} = gl__check_collisions_list(maps:to_list(Balls), {[], []}),
 
     % remove removed balls
-    maps:without(BallsKilled, Balls).
+    {maps:without(BallsKilled, Balls), Collisions}.
 
 
 gl__check_collisions_list([], Accum) -> Accum;
 gl__check_collisions_list([_], Accum) -> Accum;
-gl__check_collisions_list([{IdTarget, BallTarget} | Remaining], Accum) ->
+gl__check_collisions_list([{IdTarget, BallTarget} | Remaining], {KilledAccum, CollisionAccum}) ->
 
     % list comprehension
-    Removed = [
+    CollisionResults = [
 
         % handle collision with the target ball, for each {IdY, BallY} from list Remaining
         gl__handle_collision(IdTarget, BallTarget, IdY, BallY) || {IdY, BallY} <- Remaining,
@@ -140,8 +152,13 @@ gl__check_collisions_list([{IdTarget, BallTarget} | Remaining], Accum) ->
         gl__check_collisions_pair(BallTarget, BallY) =:= colliding
     ],
 
+    % CollisionResults is now an array of {Id1, Id2} and some 'equal'
+    % match with {a,b} will filter out 'equal' atoms
+    Killed = [KilledId || {_Eater, KilledId} <- CollisionResults],
+    Collisions = [{EaterId, KilledId} || {EaterId, KilledId} <- CollisionResults],
+
     % loop on the remaining set of balls, increment the accumulator
-    gl__check_collisions_list(Remaining, Removed ++ Accum).
+    gl__check_collisions_list(Remaining, {Killed ++ KilledAccum, Collisions ++ CollisionAccum}).
 
 
 %%% Checks collision of a pair of balls
@@ -158,11 +175,19 @@ gl__check_collisions_pair(Ball1, Ball2) ->
 
 %%% Handle collision between two balls
 %%% 
-%%% Returns the Id of the eaten ball
+%%% Returns the ids in this order {EaterID, KilledID}
+%%% or 'equal' if they have same radius
 gl__handle_collision(Id1, Ball1, Id2, Ball2) ->
-    % for just delete Ball2
-    % it should handle one ball 'eating' another
-    Id2.
+    % get both radius
+    R1 = maps:get(radius, Ball1),
+    R2 = maps:get(radius, Ball2),
+
+    % eater is the one with bugger radius
+    if
+        R1 > R2 -> {Id1, Id2};
+        R2 > R1 -> {Id2, Id1};
+        true -> equal
+    end.
 
 
 %%% ---------------------------
@@ -185,22 +210,29 @@ gl__eat_food_list([], FoodMap, Accum) -> {Accum, FoodMap};
 gl__eat_food_list([{IdTarget, BallTarget} | RemainingBalls], FoodMap, Accum) ->
 
     % list comprehension
-    RemovedFoodIds = [
+    RemovedFoods = [
 
         % return list of food ids, from full list of Food
-        IdFood || {IdFood, FoodElem} <- maps:to_list(FoodMap),
+        {IdFood, FoodElem} || {IdFood, FoodElem} <- maps:to_list(FoodMap),
 
         % ONLY handle (filter) if there is a collision
         gl__check_food_collision(BallTarget, FoodElem) =:= colliding
     ],
 
-    % increase the ball radius
-    RadiusIncrease = length(RemovedFoodIds) * ?R_INC_STEP,
+    % sum up the eaten food values
+    FoodEatenValue = gl__handle_food_eat_list(RemovedFoods),
+
+    % radius increase = food * step_per_food_unit
+    NewRadius = max(?BALL_R, maps:get(radius, BallTarget) + FoodEatenValue * ?R_INC_STEP),
+
+    % update ball radius and its speed
     UpdatedBall = BallTarget#{
-        radius => maps:get(radius, BallTarget) + RadiusIncrease
+        radius => NewRadius,
+        speed => calculate_speed(NewRadius)
     },
 
     % delete eaten food
+    RemovedFoodIds = [FoodId || {FoodId, _} <- RemovedFoods],
     NewFood = maps:without(RemovedFoodIds, FoodMap),
 
     % loop on:
@@ -209,7 +241,6 @@ gl__eat_food_list([{IdTarget, BallTarget} | RemainingBalls], FoodMap, Accum) ->
         NewFood, % passing only the remaining food
         [{IdTarget, UpdatedBall} | Accum] % add updated ball to accumulator
     ).
-
 
 
 %%% Check for a collision between a ball and a food element
@@ -224,6 +255,21 @@ gl__check_food_collision(Ball, FoodElem) ->
         false -> no_collision
     end.
 
+gl__handle_food_eat_list(RemovedFoods) ->
+    lists:foldl(
+
+        % function to apply on every list item
+        % just sum the accumulator
+        fun({_FoodId, FoodElem}, Acc) ->
+            Acc + maps:get(value, FoodElem) 
+        end,
+
+        % initial value of accumulator
+        0, 
+
+        % list to loop on
+        RemovedFoods
+    ).
 
 %%% ---------------------------
 %%% ENCODING/DECODING
@@ -299,7 +345,7 @@ encode__state(Balls, Food) ->
         fun(PlayerId, Ball, Accumulator) ->
             [encode__ball(PlayerId, Ball) | Accumulator]
         end, 
-        [],     % accumulator initialli set to empty list
+        [],     % accumulator initially set to empty list
         Balls   % map is Balls
     ),
 
@@ -337,22 +383,32 @@ encode__ball(PlayerId, Ball) ->
 %%% Used in the general encode__state
 %%% 
 %%% Output format: 
-%%%     {"id":<food id>,"x":<x val>,"y":<y val>}
+%%%     {"id":<food id>,"x":<x val>,"y":<y val>,"value":<value>}
 %%% 
 %%% Output example: 
-%%%     {"id":123,"x":100.0,"y":200.0}
+%%%     {"id":123,"x":100.0,"y":200.0,"value":1}
 encode__food(FoodId, FoodInfo) ->
-    io_lib:format("{\"id\":~p,\"x\":~.2f,\"y\":~.2f}", [
+    io_lib:format("{\"id\":~p,\"x\":~.2f,\"y\":~.2f,\"value\":~p}", [
         FoodId,
         float(maps:get(x, FoodInfo)),
-        float(maps:get(y, FoodInfo))
+        float(maps:get(y, FoodInfo)),
+        maps:get(value, FoodInfo)
     ]).
 
+encode__gameover(State) ->
+    "todo".
 
 %%% ---------------------------
 %%% GENERAL UTILS
 %%% ---------------------------
 
+% Calculate a ball's speed based on its radius
+% idea: hyperbolic relation, so slower as it gets bigger
+% but with upper limiter on radius
+calculate_speed(Radius) when Radius =< ?BALL_R ->
+    ?SPEED_MAX;
+calculate_speed(Radius) ->
+    ?SPEED_MIN + (?SPEED_MAX - ?SPEED_MIN) * (?BALL_R / Radius).
 
 % Clamp between [min, max]
 % useful to ensure ball is within boundaries

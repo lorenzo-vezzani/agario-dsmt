@@ -7,7 +7,7 @@
 %%% State:
 %%%   game_id   - binary, the unique identifier of this game session
 %%%   balls     - map of PlayerId (binary) -> Ball entity (x, y, dx, dy, radius)
-%%%   clients   - map of WsPid (pid) -> PlayerId (binary)
+%%%   clients   - map of PlayerId (binary) -> {WsPid (pid), Client stats} 
 %%%
 %%% The process registers itself in egs_supervisor ETS table on init
 %%% and unregisters on terminate, so it can always be found by game_id.
@@ -23,12 +23,21 @@
 
 % Client update refresh rate
 -define(TICK_MS, 20).
+
+% game time, measured int seconds, then converted into tick units (div for integer division)
+-define(GAME_TIME_S, 120).
+-define(GAME_TIME_TICKS, ?GAME_TIME_S * 1000 div ?TICK_MS).
+
 % Food update refresh rate
 -define(FOOD_UPDATE_TICK_MS, 1000).
 
 -define(MAX_FOOD_COUNT, 100).
 
+% state variable names
+-define(STATE_CLIENTS, clients).
+-define(STATE_BALL, balls).
 -define(STATE_FOOD, foods).
+-define(STATE_TIME, ticks).
 
 
 %%% ---------------------------
@@ -71,19 +80,27 @@ init(GameId) ->
 
     % initializes state
     {ok, #{
-        game_id => GameId,  % init to the passed GameId
-        clients => #{},     % no clients yet
-        balls   => #{},     % balls empty
-        ?STATE_FOOD => egs_game_module_utils:gl__spawn_random_food_map(20) % food to eat
+        game_id => GameId, % init to the passed GameId
+        ?STATE_CLIENTS => #{}, % no clients yet
+        ?STATE_BALL => #{}, % balls empty
+        ?STATE_FOOD => egs_game_module_utils:gl__spawn_random_food_map(20), % food to eat, 20 initial pieces
+        ?STATE_TIME => 0
     }}.
 
 
-%%% Called when the game process is shutting down (normally or after a crash).
-%%% Removes this game from the ETS registry so no new clients can join
-%%% and stale entries are not left behind.
+%%% Called when the game process is shutting down (normally or after a crash)
 terminate(_Reason, State) ->
     print_cli("{terminate/2} game=~s shutting down", [maps:get(game_id, State)]),
+
+    % close webosockets
+    lists:foreach(
+        fun(#{ws_pid := Pid}) -> Pid ! {close, 1000, <<"gameover">>} end,
+        maps:values(maps:get(?STATE_CLIENTS, State))
+    ),
+
+    % unregitser game
     egs_supervisor:unregister_game(maps:get(game_id, State)),
+
     ok.
 
 
@@ -126,9 +143,9 @@ leave(GameId, PlayerId) ->
     case egs_supervisor:lookup(GameId) of
 
         % cast 'leave' message
-        {ok, Pid} -> gen_server:cast(Pid, {leave, self(), PlayerId});
+        {ok, Pid} -> gen_server:cast(Pid, {leave, PlayerId});
 
-        Err       -> Err
+        Err -> Err
     end.
 
 
@@ -150,9 +167,12 @@ handle_cast({join, WsPid, PlayerId}, State) ->
     % spawns ball at random position with zero direction
     NewBall = egs_game_module_utils:gl__spawn_random_ball(),
 
+    % initialize cient state
+    ClientState = #{ws_pid => WsPid, kills => 0},
+
     % insert new player, both to WS pids and balls map
-    Clients = maps:put(WsPid, PlayerId, maps:get(clients, State)),
-    Balls = maps:put(PlayerId, NewBall, maps:get(balls, State)),
+    Clients = maps:put(PlayerId, ClientState, maps:get(?STATE_CLIENTS, State)),
+    Balls = maps:put(PlayerId, NewBall, maps:get(?STATE_BALL, State)),
     
     % log
     print_cli("{handle_cast join} player=~s (#clients=~p)", [PlayerId, maps:size(Clients)]),
@@ -163,8 +183,8 @@ handle_cast({join, WsPid, PlayerId}, State) ->
 
         % new state map
         State#{
-            clients => Clients, 
-            balls => Balls
+            ?STATE_CLIENTS => Clients, 
+            ?STATE_BALL => Balls
         }
     };
 
@@ -176,7 +196,7 @@ handle_cast({player_msg, PlayerId, Msg}, State) ->
     % print_cli("{handle_cast MSG} msg=~s", [Msg]),
 
     % retrive balls map
-    Balls = maps:get(balls, State),
+    Balls = maps:get(?STATE_BALL, State),
 
     % search (and get) player's ball
     PlayerBall = maps:find(PlayerId, Balls),
@@ -199,7 +219,7 @@ handle_cast({player_msg, PlayerId, Msg}, State) ->
             },
 
             % return updated state
-            {noreply, State#{balls => BallsUpdated}};
+            {noreply, State#{?STATE_BALL => BallsUpdated}};
 
         % on whatever error just do not update
         _ ->
@@ -209,17 +229,17 @@ handle_cast({player_msg, PlayerId, Msg}, State) ->
 
 %%% Handles a player leaving the game cleanly (browser tab closed normally).
 %%% Removes the player from both maps.
-handle_cast({leave, WsPid, PlayerId}, State) ->
+handle_cast({leave, PlayerId}, State) ->
 
     % remove from both maps
-    Clients = maps:remove(WsPid, maps:get(clients, State)),
-    Balls = maps:remove(PlayerId, maps:get(balls, State)),
+    Clients = maps:remove(PlayerId, maps:get(?STATE_CLIENTS, State)),
+    Balls = maps:remove(PlayerId, maps:get(?STATE_BALL, State)),
 
     % log
     print_cli("{handle_cast leave} player=~s", [PlayerId]),
     
     % update state
-    {noreply, State#{clients => Clients, balls => Balls}}.
+    {noreply, State#{?STATE_CLIENTS => Clients, ?STATE_BALL => Balls}}.
 
 
 %%% Send a raw browser message to the game process
@@ -244,42 +264,53 @@ player_msg(GameId, PlayerId, Msg) ->
 %%% 
 %%% handles messages from other Erlang processes
 %%%  - tick : from self(), to implement periodic update
+%%%  - food : from self(), to implement periodic food spawn
+%%%  - gameover : from self(), to implement gameover procedure
 %%%  - down : from websocket handler on disconnection
 %%% ---------------------------
 
 %%% Handles the periodic tick:
 %%% 1) Move all balls
 %%% 2) check for collisions
+%%% 3) handle all food eating
 %%% final) Broadcast updated state to all clients
 handle_info(tick, State) ->
-    BallsInitial = maps:get(balls, State),
-    Clients = maps:get(clients, State),
-    Food = maps:get(?STATE_FOOD, State),
+    BallsInitial = maps:get(?STATE_BALL, State),
+    Clients = maps:get(?STATE_CLIENTS, State),
+    Food = maps:get(?STATE_FOOD, State), 
 
     % 1) move all balls
     BallsMoved = egs_game_module_utils:gl__move_balls(BallsInitial),
 
     % 2) collisions
-    BallsAfterColl = egs_game_module_utils:gl__handle_balls_collisions(BallsMoved),
+    {BallsAfterColl, Collisions} = egs_game_module_utils:gl__handle_balls_collisions(BallsMoved),
 
     % 3) eat food
     {BallsAfterEating, FoodAfterEating} = egs_game_module_utils:gl__eat_food(BallsAfterColl, Food),
 
-    % finally) Broadcast
-    case maps:size(Clients) of
-        0 -> ok;
-        _ ->
-            Payload = egs_game_module_utils:encode__state(BallsAfterEating, FoodAfterEating),
-            broadcast(maps:keys(Clients), Payload)
-    end,
+    % update kill count
+    ClientsUpdated = update_kills(Clients, Collisions),
 
-    % reschedule state update and boradcast after TICK time
-    erlang:send_after(?TICK_MS, self(), tick),
+    % finally) Broadcast
+    Payload = egs_game_module_utils:encode__state(BallsAfterEating, FoodAfterEating),
+    broadcast(Clients, game_state, Payload),
+
+    % schedule next update
+    case maps:get(?STATE_TIME, State) < ?GAME_TIME_TICKS of
+        true ->
+            % reschedule state update and boradcast after TICK time
+            erlang:send_after(?TICK_MS, self(), tick);
+        false ->
+            % don't schedule update, schedule end of game
+            erlang:send_after(?TICK_MS, self(), gameover)
+    end,
 
     % save state
     {noreply, State#{
-        balls => BallsAfterEating,
-        ?STATE_FOOD => FoodAfterEating
+        ?STATE_CLIENTS => ClientsUpdated,
+        ?STATE_BALL => BallsAfterEating,
+        ?STATE_FOOD => FoodAfterEating,
+        ?STATE_TIME => (maps:get(?STATE_TIME, State) + 1)
     }};
 
 %%% Implements periodic food spawning
@@ -306,6 +337,15 @@ handle_info(food, State) ->
             {noreply, State}
     end;
 
+handle_info(gameover, State) ->
+    Clients = maps:get(?STATE_CLIENTS, State),
+    Payload = egs_game_module_utils:encode__gameover(State),
+
+    % broadcast the ending state and information
+    broadcast(Clients, gameover, Payload),
+
+    {stop, normal, State};
+
 %%% Handles death of a monitored websocket handler process
 %%% Triggered when a client crashes or disconnects without calling leave/2
 %%% 
@@ -318,24 +358,30 @@ handle_info(food, State) ->
 handle_info({'DOWN', _Ref, process, WsPid, Reason}, State) ->
     print_cli("{handle_info DOWN} ws_pid=~p reason=~p", [WsPid, Reason]),
 
-    % Get all clients state (map of WS_pid <-> PlayerId)
-    Clients = maps:get(clients, State),
+    % Get all clients state (map of PlayerId <-> WS_pid)
+    Clients = maps:get(?STATE_CLIENTS, State),
+
+    % need to find player_id by ws_pid
+    Players = [PlayerId || {PlayerId, #{ws_pid := Pid}} <- maps:to_list(Clients), Pid =:= WsPid],
 
     % find the player_id linked to this websocket
-    case maps:find(WsPid, Clients) of
+    case Players of
 
-        % on player found
-        {ok, PlayerId} ->
+        % one player found
+        [PlayerId] ->
             % remove from both maps
-            NewClients = maps:remove(WsPid, Clients),
-            Balls = maps:remove(PlayerId, maps:get(balls, State)),
+            NewClients = maps:remove(PlayerId, Clients),
+            Balls = maps:remove(PlayerId, maps:get(?STATE_BALL, State)),
 
             % update state
-            {noreply, State#{clients => NewClients, balls => Balls}};
+            {noreply, State#{?STATE_CLIENTS => NewClients, ?STATE_BALL => Balls}};
 
-        % on whatever error, keep the state
-        error ->
-            {noreply, State}
+        % More than one player found, keep the state
+        % this should never happen
+        [_|_] -> {noreply, State};
+
+        % No player found, keep the state
+        [] -> {noreply, State}
     end.
 
 
@@ -346,9 +392,41 @@ handle_call(_Req, _From, State) ->
 
 
 %%% Sends the payload to all connected WS handler pids.
-broadcast(Pids, Payload) ->
-    lists:foreach(fun(Pid) ->
-        Pid ! {game_state, Payload}
-    end, Pids).
+broadcast(Clients, Atom, Payload) ->
+
+    % get websocket handlers PIDs (list)
+    WsHandlerPIDs = [maps:get(ws_pid, ClientMap) || ClientMap <- maps:values(Clients)],
+
+    lists:foreach(
+        fun(Pid) ->
+            Pid ! {Atom, Payload}
+        end, 
+        WsHandlerPIDs
+    ).
+
+%%% Update the kill count of all clients,
+%%% given the list of collision
+update_kills(Clients, Collisions) ->
+    lists:foldl(
+        fun({EaterId, _}, ClientsMap) ->
+
+            % find clientId in client map (may be disconnected)
+            case maps:find(EaterId, ClientsMap) of
+
+                {ok, EaterMap} -> 
+                    % update the kill counter
+                    maps:put(
+                        EaterId, 
+                        EaterMap#{kills => maps:get(kills, EaterMap) + 1}, 
+                        ClientsMap
+                    );
+
+                % just return the client map for next iteration
+                error -> ClientsMap
+            end
+        end, 
+        Clients, 
+        Collisions
+    ).
 
 %%% endregion

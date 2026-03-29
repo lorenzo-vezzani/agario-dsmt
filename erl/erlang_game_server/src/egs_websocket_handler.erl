@@ -13,7 +13,6 @@
 %%% ---------------
 
 -module(egs_websocket_handler).
--behaviour(cowboy_websocket_handler).
 -export([
     init/2, 
     websocket_init/1, 
@@ -106,15 +105,31 @@ websocket_handle(Frame, State) ->
     {ok, State}.
 
 
-%%% Called when another Erlang process sends a message to this pid.
-%%%
-%%% {game_state, Payload} - sent by the game server on every tick.
-%%%   Payload is a JSON binary, e.g. {"players":{"alice":5,"bob":3}}
-%%%   Forward it to the browser as a text WebSocket frame.
+%%% websocket_info is called when another Erlang process sends a message to this pid.
+
+%%% {game_state, Payload} is sent by game server on every tick
+%%% Payload is JSON, just forward it to the browser as a text weboscket frame.
 websocket_info({game_state, Payload}, State) ->
     %%% uncomment for full debug, NOTE: a print every 20ms
     % print_cli("{websocket_info/2} sending to browser: ~s", [Payload]),
     {reply, {text, Payload}, State};
+
+%%% {gameover, Payload} is sent by game server on game ended
+websocket_info({gameover, Payload}, State) ->
+    print_cli("{websocket_info/2 gameover} sending to browser: ~s", [Payload]),
+    
+    % sending two frames
+    {
+        reply, 
+        [
+            % frame 1: json payload
+            {text, Payload}, 
+
+            % frame 2: close connection
+            {close, 1001, <<"gameover">>}
+        ], 
+        State
+    };
 
 %%% Catch-all for unexpected messages from other processes (just print and then ignore)
 websocket_info(Msg, State) ->
