@@ -22,10 +22,10 @@
 
 
 % Client update refresh rate
--define(TICK_MS, 20).
+-define(TICK_MS, 50).
 
 % game time, measured int seconds, then converted into tick units (div for integer division)
--define(GAME_TIME_S, 120).
+-define(GAME_TIME_S, 60).
 -define(GAME_TIME_TICKS, ?GAME_TIME_S * 1000 div ?TICK_MS).
 
 % Food update refresh rate
@@ -275,6 +275,8 @@ player_msg(GameId, PlayerId, Msg) ->
 %%% 3) handle all food eating
 %%% final) Broadcast updated state to all clients
 handle_info(tick, State) ->
+    StartTime = erlang:monotonic_time(millisecond),
+
     BallsInitial = maps:get(?STATE_BALL, State),
     Clients = maps:get(?STATE_CLIENTS, State),
     Food = maps:get(?STATE_FOOD, State), 
@@ -298,11 +300,16 @@ handle_info(tick, State) ->
     % schedule next update
     case maps:get(?STATE_TIME, State) < ?GAME_TIME_TICKS of
         true ->
-            % reschedule state update and boradcast after TICK time
-            erlang:send_after(?TICK_MS, self(), tick);
+            % reschedule state update and boradcast after TICK time - elapsed
+            ElapsedMs = erlang:monotonic_time(millisecond) - StartTime,
+
+            % Max out at 0, if elapsed > tick (maybe some big overhead)
+            NextUpdate = max(0, ?TICK_MS - ElapsedMs),
+            erlang:send_after(NextUpdate, self(), tick);
+
         false ->
             % don't schedule update, schedule end of game
-            erlang:send_after(?TICK_MS, self(), gameover)
+            erlang:send_after(0, self(), gameover)
     end,
 
     % save state
