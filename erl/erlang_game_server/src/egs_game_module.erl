@@ -440,7 +440,6 @@ handle_call(_Req, _From, State) ->
 
 %%% Sends the payload to all connected WS handler pids.
 broadcast(Clients, Atom, Payload) ->
-
     % get websocket handlers PIDs (list)
     WsHandlerPIDs = [maps:get(ws_pid, ClientMap) || ClientMap <- maps:values(Clients)],
 

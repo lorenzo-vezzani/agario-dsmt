@@ -359,7 +359,8 @@ encode__state(Balls, Food) ->
 
     % with iolist_to_binary we can avoid manual loop and string join
     iolist_to_binary([
-        "{\"balls\":[", lists:join(",", JSON_balls_data), "],",
+        "{\"type\":\"state\",",
+        "\"balls\":[", lists:join(",", JSON_balls_data), "],",
         "\"food\":[", lists:join(",", JSON_food_data), "]}"
     ]).
 
@@ -395,8 +396,37 @@ encode__food(FoodId, FoodInfo) ->
         maps:get(value, FoodInfo)
     ]).
 
+
+%%% returns the encoding for the game termination
+%%% it includes the top 3 largest balls at the termination
 encode__gameover(State) ->
-    "todo".
+    Balls = maps:get(balls, State, #{}),
+
+    BallList = maps:to_list(Balls),
+
+    Sorted = lists:sort(
+        fun({_, BallA}, {_, BallB}) ->
+            float(maps:get(radius, BallA)) > float(maps:get(radius, BallB))
+        end,
+        BallList
+    ),
+
+    Top3 = lists:sublist(Sorted, 3),
+
+    Top3Json = lists:map(
+        fun({PlayerId, Ball}) ->
+            #{
+                player_id => PlayerId,
+                radius => maps:get(radius, Ball)
+            }
+        end,
+        Top3
+    ),
+
+    jsx:encode(#{
+        type => <<"gameover">>,
+        top3 => Top3Json
+    }).
 
 %%% ---------------------------
 %%% GENERAL UTILS
