@@ -64,6 +64,7 @@ public class AuthService implements UserDetailsService {
         user.setGamesPlayed(0);
         user.setGamesWon(0);
         user.setDotsEaten(0);
+        user.setDeaths(0);
         user.setCreatedAt(LocalDateTime.now());
         userRepository.save(user);
 
