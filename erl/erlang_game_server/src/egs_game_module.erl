@@ -35,6 +35,7 @@
 
 % state variable names
 -define(STATE_CLIENTS, clients).
+-define(STATE_STATS, stats).
 -define(STATE_BALL, balls).
 -define(STATE_FOOD, foods).
 -define(STATE_TIME, ticks).
@@ -80,6 +81,7 @@ init(GameId) ->
     {ok, #{
         game_id => GameId, % init to the passed GameId
         ?STATE_CLIENTS => #{}, % no clients yet
+        ?STATE_STATS => #{}, % no clients yet
         ?STATE_BALL => #{}, % balls empty
         ?STATE_FOOD => egs_game_module_utils:gl__spawn_random_food_map(20), % food to eat, 20 initial pieces
         ?STATE_TIME => 0,
@@ -164,12 +166,6 @@ handle_cast({join, WsPid, PlayerId}, State) ->
     % This allows autuomatic removal, via the handler DOWN
     monitor(process, WsPid),
 
-    % spawns ball at random position with zero direction
-    NewBall = egs_game_module_utils:gl__spawn_random_ball(),
-
-    % initialize client state
-    ClientState = #{ws_pid => WsPid, kills => 0},
-
     IsBallUpdating = maps:get(?IS_BALL_UPDATING, State),
     IsFoodUpdating = maps:get(?IS_FOOD_UPDATING, State),
     CurrentClients = maps:get(?STATE_CLIENTS, State),
@@ -178,7 +174,7 @@ handle_cast({join, WsPid, PlayerId}, State) ->
         {#{}, false} ->
             % Initializes tick update
             erlang:send_after(?TICK_MS, self(), tick),
-            print_cli("{handle_cast join} first client joined (~s), starting updating ball status...", [PlayerId]);
+            print_cli("{handle_cast join} first client joined (~s), starting updating ball", [PlayerId]);
         _ -> ok
     end,
     %% if this is the first client and the food update isn't active, start updates on food
@@ -186,13 +182,33 @@ handle_cast({join, WsPid, PlayerId}, State) ->
         {#{}, false} ->
             % Initializes tick update
             erlang:send_after(?FOOD_UPDATE_TICK_MS, self(), food),
-            print_cli("{handle_cast join} first client joined (~s), starting updating food status...", [PlayerId]);
+            print_cli("{handle_cast join} first client joined (~s), starting updating food", [PlayerId]);
         _ -> ok
     end,
 
-    % insert new player, both to WS pids and balls map
+    % spawns ball at random position with zero direction
+    NewBall = egs_game_module_utils:gl__spawn_random_ball(),
+
+    % initialize client state
+    ClientState = #{ws_pid => WsPid},
+
+    % insert new player
     Clients = maps:put(PlayerId, ClientState, maps:get(?STATE_CLIENTS, State)),
     Balls = maps:put(PlayerId, NewBall, maps:get(?STATE_BALL, State)),
+
+    % put a new entry in map ONLY if there's not already one (there may be if player is rejoining)
+    Stats = case maps:is_key(PlayerId, maps:get(?STATE_STATS, State)) of
+
+        % key not found, so insert initial stats
+        false ->
+            % Initial stats
+            StatsInitial = #{kills => 0, deaths => 0},
+            maps:put(PlayerId, StatsInitial, maps:get(?STATE_STATS, State));
+
+        % already present, just fetch old state
+        true ->
+            maps:get(?STATE_STATS, State)
+    end,
 
     % log
     print_cli("{handle_cast join} player=~s (#clients=~p)", [PlayerId, maps:size(Clients)]),
@@ -204,6 +220,7 @@ handle_cast({join, WsPid, PlayerId}, State) ->
         % new state map
         State#{
             ?STATE_CLIENTS => Clients,
+            ?STATE_STATS => Stats,
             ?STATE_BALL => Balls,
             ?IS_BALL_UPDATING => true,
             ?IS_FOOD_UPDATING => true
@@ -302,17 +319,18 @@ player_msg(GameId, PlayerId, Msg) ->
 %%% 2) check for collisions
 %%% 3) handle all food eating
 %%% final) Broadcast updated state to all clients
+
+% avoid doing the compytation loop if no clients are present
+% should never occur unless scheduled at exact time with last client leave
 handle_info(tick, #{?STATE_CLIENTS := Clients} = State) when map_size(Clients) == 0 ->
-    %% if no clients, no need to update
-    print_cli("{handle_info tick} no clients in game, stopping balls update", []),
-    {noreply, State#{
-        ?IS_BALL_UPDATING => false
-    }};
+    {noreply, State};
+
 handle_info(tick, State) ->
     StartTime = erlang:monotonic_time(millisecond),
 
     BallsInitial = maps:get(?STATE_BALL, State),
     Clients = maps:get(?STATE_CLIENTS, State),
+    Stats = maps:get(?STATE_STATS, State),
     Food = maps:get(?STATE_FOOD, State),
 
     % 1) move all balls
@@ -325,10 +343,10 @@ handle_info(tick, State) ->
     {BallsAfterEating, FoodAfterEating} = egs_game_module_utils:gl__eat_food(BallsAfterColl, Food),
 
     % update kill count
-    ClientsUpdated = update_kills(Clients, Collisions),
+    StatsUpdated = egs_game_module_utils:gl__update_stats(Stats, Collisions),
 
     % finally) Broadcast
-    Payload = egs_game_module_utils:encode__state(BallsAfterEating, FoodAfterEating),
+    Payload = egs_game_module_utils:encode__state(BallsAfterEating, FoodAfterEating, StatsUpdated),
     broadcast(Clients, game_state, Payload),
 
     % schedule next update
@@ -348,19 +366,17 @@ handle_info(tick, State) ->
 
     % save state
     {noreply, State#{
-        ?STATE_CLIENTS => ClientsUpdated,
+        ?STATE_STATS => StatsUpdated,
         ?STATE_BALL => BallsAfterEating,
         ?STATE_FOOD => FoodAfterEating,
         ?STATE_TIME => (maps:get(?STATE_TIME, State) + 1)
     }};
 
+
 %%% Implements periodic food spawning
 handle_info(food, #{?STATE_CLIENTS := Clients} = State) when map_size(Clients) == 0 ->
-    %% if no clients, no need to update
-    print_cli("{handle_info food} no clients in game, stopping food update", []),
-    {noreply, State#{
-        ?IS_FOOD_UPDATING => false
-    }};
+    {noreply, State};
+
 handle_info(food, State) ->
 
     % reschedule food update
@@ -386,7 +402,9 @@ handle_info(food, State) ->
 
 handle_info(gameover, State) ->
     Clients = maps:get(?STATE_CLIENTS, State),
-    Payload = egs_game_module_utils:encode__gameover(State),
+    Stats = maps:get(?STATE_STATS, State),
+    Balls = maps:get(?STATE_BALL, State),
+    Payload = egs_game_module_utils:encode__gameover(Stats, Balls),
 
     % broadcast the ending state and information
     broadcast(Clients, gameover, Payload),
@@ -448,31 +466,6 @@ broadcast(Clients, Atom, Payload) ->
             Pid ! {Atom, Payload}
         end,
         WsHandlerPIDs
-    ).
-
-%%% Update the kill count of all clients,
-%%% given the list of collision
-update_kills(Clients, Collisions) ->
-    lists:foldl(
-        fun({EaterId, _}, ClientsMap) ->
-
-            % find clientId in client map (may be disconnected)
-            case maps:find(EaterId, ClientsMap) of
-
-                {ok, EaterMap} ->
-                    % update the kill counter
-                    maps:put(
-                        EaterId,
-                        EaterMap#{kills => maps:get(kills, EaterMap) + 1},
-                        ClientsMap
-                    );
-
-                % just return the client map for next iteration
-                error -> ClientsMap
-            end
-        end,
-        Clients,
-        Collisions
     ).
 
 %%% endregion

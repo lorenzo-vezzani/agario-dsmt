@@ -21,10 +21,11 @@
     gl__spawn_random_food_map/1,
     gl__move_balls/1,
     gl__handle_balls_collisions/1,
+    gl__update_stats/2,
     gl__eat_food/2,
     decode__direction_update/1,
-    encode__state/2,
-    encode__gameover/1
+    encode__state/3,
+    encode__gameover/2
 ]).
 
 -define(ARENA_W,    2000.0).
@@ -65,7 +66,7 @@ gl__spawn_random_food_n(Count, Accum) ->
 
 %%% Spwan a new random food food
 gl__spawn_random_food() ->
-    Values = [-5, -1, 1, 5],
+    Values = [-5, -3, -2, -1, -1, -1, 1, 1, 1, 2, 3, 5],
     FoodValue = lists:nth(rand:uniform(length(Values)), Values),
     gl__spawn_random_food(FoodValue).
 
@@ -189,6 +190,40 @@ gl__handle_collision(Id1, Ball1, Id2, Ball2) ->
         true -> equal
     end.
 
+gl__update_stats(Stats, Collisions) ->
+
+    % loop on collision lit, it's almost always empty
+    lists:foldl(
+        fun({EaterId, KilledId}, StatsAcc) ->
+
+            % 1) increment kills for eater
+
+            % Search eaterStats in the statistics map
+            StatsAcc_afterEater = case maps:find(EaterId, StatsAcc) of
+                {ok, EaterStats} ->
+                    maps:put(
+                        EaterId, % id
+                        % update the kills (increment one) of the original map EaterStats
+                        EaterStats#{kills => maps:get(kills, EaterStats) + 1}, 
+                        StatsAcc
+                    );
+                % on error return map unchanged
+                error -> StatsAcc
+            end,
+
+            % 2) increment deaths for killed
+
+            % in this case the map is the return of the case AND return of the function
+            case maps:find(KilledId, StatsAcc_afterEater) of
+                {ok, KilledStats} ->
+                    maps:put(KilledId, KilledStats#{deaths => maps:get(deaths, KilledStats) + 1}, StatsAcc_afterEater);
+                error -> StatsAcc_afterEater
+            end
+
+        end,
+        Stats,
+        Collisions
+    ).
 
 %%% ---------------------------
 %%% FOOD EATING
@@ -332,7 +367,7 @@ decode__direction_update(Msg) ->
 %%%             ...
 %%%         ]
 %%%     }
-encode__state(Balls, Food) ->
+encode__state(Balls, Food, Stats) ->
     %%% ref: https://www.erlang.org/docs/23/man/maps#fold-3
     %%%     fold(Fun, InitAcc, Map) -> Accumulator
     %%% description from official ref:
@@ -357,11 +392,78 @@ encode__state(Balls, Food) ->
         Food
     ),
 
+    JSON_stats_data = maps:fold(
+        fun(PlayerId, PlayerStats, Accumulator) ->
+            [encode__stats(PlayerId, PlayerStats) | Accumulator]
+        end, 
+        [],     % accumulator initially set to empty list
+        Stats   % map is Stats
+    ),
+
     % with iolist_to_binary we can avoid manual loop and string join
     iolist_to_binary([
-        "{\"type\":\"state\",",
+        "{",
+        "\"type\":\"state\",",
         "\"balls\":[", lists:join(",", JSON_balls_data), "],",
-        "\"food\":[", lists:join(",", JSON_food_data), "]}"
+        "\"food\":[", lists:join(",", JSON_food_data), "],",
+        "\"stats\":[", lists:join(",", JSON_stats_data), "]",
+        "}"
+    ]).
+
+
+
+%%% returns the encoding for the game termination
+%%% it includes the top 3 largest balls at the termination
+encode__gameover(Stats, Balls) ->
+
+    % [balls] sort ball by radius (bigger first in list)
+    SortedBalls = lists:sort(
+        fun({_IdA, BallA}, {_IdB, BallB}) ->
+            maps:get(radius, BallA) < maps:get(radius, BallB)
+        end,
+        maps:to_list(Balls)
+    ),
+    
+    % [balls] get list of their encodings in JSON
+    JSON_balls_data = lists:foldl(
+        % Add the encoded state of the current ball to the accumulator
+        fun({PlayerId, Ball}, Accumulator) ->
+            [encode__ball(PlayerId, Ball) | Accumulator]
+        end, 
+        [],     % accumulator initially set to empty list
+        SortedBalls   % map is SortedBalls
+    ),
+
+    % [statistics] sort by kill (higher first), then by deaths (lower first)
+    SortedStats = lists:sort(
+        fun({_IdA, StatsA}, {_IdB, StatsB}) ->
+            Ka = maps:get(kills, StatsA),
+            Kb = maps:get(kills, StatsB),
+            Da = maps:get(deaths, StatsA),
+            Db = maps:get(deaths, StatsB),
+            
+            % A has more kills OR (A has same kills and less deaths)
+            ((Ka < Kb) orelse ((Ka == Kb) andalso (Da > Db)))
+        end,
+        maps:to_list(Stats)
+    ),
+
+    % [statistics] get their list in json
+    JSON_stats_data = lists:foldl(
+        fun({PlayerId, PlayerStats}, Accumulator) ->
+            [encode__stats(PlayerId, PlayerStats) | Accumulator]
+        end, 
+        [],     % accumulator initially set to empty list
+        SortedStats   % map is Stats
+    ),
+
+    % with iolist_to_binary we can avoid manual loop and string join
+    iolist_to_binary([
+        "{",
+        "\"type\":\"gameover\",",
+        "\"ordered_balls\":[", lists:join(",", JSON_balls_data), "],",
+        "\"stats\":[", lists:join(",", JSON_stats_data), "]",
+        "}"
     ]).
 
 %%% returns the encoding for a single ball
@@ -384,12 +486,12 @@ encode__ball(PlayerId, Ball) ->
 %%% Used in the general encode__state
 %%% 
 %%% Output format: 
-%%%     {"id":<food id>,"x":<x val>,"y":<y val>,"value":<value>}
+%%%     {"id":<food id>,"x":<x val>,"y":<y val>,"r":<value>}
 %%% 
 %%% Output example: 
-%%%     {"id":123,"x":100.0,"y":200.0,"value":1}
+%%%     {"id":123,"x":100.0,"y":200.0,"r":1}
 encode__food(FoodId, FoodInfo) ->
-    io_lib:format("{\"id\":~p,\"x\":~.2f,\"y\":~.2f,\"value\":~p}", [
+    io_lib:format("{\"id\":~p,\"x\":~.2f,\"y\":~.2f,\"r\":~p}", [
         FoodId,
         float(maps:get(x, FoodInfo)),
         float(maps:get(y, FoodInfo)),
@@ -397,36 +499,20 @@ encode__food(FoodId, FoodInfo) ->
     ]).
 
 
-%%% returns the encoding for the game termination
-%%% it includes the top 3 largest balls at the termination
-encode__gameover(State) ->
-    Balls = maps:get(balls, State, #{}),
-
-    BallList = maps:to_list(Balls),
-
-    Sorted = lists:sort(
-        fun({_, BallA}, {_, BallB}) ->
-            float(maps:get(radius, BallA)) > float(maps:get(radius, BallB))
-        end,
-        BallList
-    ),
-
-    Top3 = lists:sublist(Sorted, 3),
-
-    Top3Json = lists:map(
-        fun({PlayerId, Ball}) ->
-            #{
-                player_id => PlayerId,
-                radius => maps:get(radius, Ball)
-            }
-        end,
-        Top3
-    ),
-
-    jsx:encode(#{
-        type => <<"gameover">>,
-        top3 => Top3Json
-    }).
+%%% returns the encoding for a single statitic element
+%%% Used in the general encode__state
+%%% 
+%%% Output format: 
+%%%     {"id":<player id>,"kills":<kill count>,"deaths":<death count>}
+%%% 
+%%% Output example: 
+%%%     {"id":123,"kills":10,"deaths":2}
+encode__stats(PlayerId, PlayerStats) ->
+    io_lib:format("{\"id\":\"~s\",\"kills\":~p,\"deaths\":~p}", [
+        PlayerId,
+        maps:get(kills, PlayerStats),
+        maps:get(deaths, PlayerStats)
+    ]).
 
 %%% ---------------------------
 %%% GENERAL UTILS

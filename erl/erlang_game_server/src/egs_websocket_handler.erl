@@ -116,7 +116,7 @@ websocket_info({game_state, Payload}, State) ->
 
 %%% {gameover, Payload} is sent by game server on game ended
 websocket_info({gameover, Payload}, State) ->
-    print_cli("{websocket_info/2 gameover} sending to browser: ~s", [Payload]),
+    print_cli("{websocket_info/2 gameover} sending to browser final JSON", []),
     
     % sending two frames
     {
@@ -133,8 +133,23 @@ websocket_info({gameover, Payload}, State) ->
 
 %%% Catch-all for unexpected messages from other processes (just print and then ignore)
 websocket_info(Msg, State) ->
+    
     print_cli("{websocket_info/2} received unexpected message: ~p", [Msg]),
-    {ok, State}.
+
+    case Msg of 
+
+        % server closes connection WITHOUT a proper gamover message:
+        % it means that it is crashed
+        {close, 1000, <<"gameover">>} ->
+            
+            % Close this websocket
+            % 1011 - internal Server Error
+            {close, 1011, <<"gameover">>};
+
+        % unknown message
+        {_Type, _Code, _Reason} ->
+            {ok, State}
+    end.
 
 
 %%% Automatically Called when the WebSocket connection closes (for any reason)
@@ -144,9 +159,19 @@ websocket_info(Msg, State) ->
 %%%          a normal browser tab close, or timeout for an idle connection
 terminate(Reason, _Req, State) ->
 
+
     % print to cli
-    print_cli("{terminate/3} reason=~p player=~s",
-        [Reason, maps:get(player_id, State, <<"unknown">>)]),
+    try
+        {Type, Code, String} = Reason,
+        PlayerId = maps:get(player_id, State), 
+        
+        print_cli("{terminate/3} reason={~p,~p,~p} player=~s",[Type, Code, String, PlayerId])
+
+    % if there are some errors, catch all
+    catch
+        _:_ -> print_cli("{terminate/3} reason=? player=?", [])
+    end,
+
     
     % Notify the game process that this player has left.
     % done to remove/cleanup any resources used
