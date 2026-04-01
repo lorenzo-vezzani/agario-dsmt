@@ -9,5 +9,6 @@ CREATE TABLE user (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     games_played INT NOT NULL,
     games_won INT NOT NULL,
-    dots_eaten INT NOT NULL
+    dots_eaten INT NOT NULL,
+    deaths INT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -29,11 +29,14 @@ public class User {
     @Column(name = "dots_eaten", nullable = false)
     private int dotsEaten;
 
+    @Column(name = "deaths", nullable = false)
+    private int deaths;
+
 
     // ---------- CONSTRUCTORS ---------- //
     public User() {}
 
-    public User(String username, String email, String password, int gamesPlayed, int gamesWon, int dotsEaten) {
+    public User(String username, String email, String password, int gamesPlayed, int gamesWon, int dotsEaten, int deaths) {
         this.username = username;
         this.email = email;
         this.password = password;
@@ -41,6 +44,7 @@ public class User {
         this.gamesWon = gamesWon;
         this.dotsEaten = dotsEaten;
         this.createdAt = LocalDateTime.now();
+        this.deaths = deaths;
     }
 
     // ---------- GETTERS AND SETTERS ---------- //
@@ -64,4 +68,12 @@ public class User {
 
     public int getDotsEaten() { return dotsEaten; }
     public void setDotsEaten(int dotsEaten) { this.dotsEaten = dotsEaten; }
+
+    public int getDeaths() {
+        return deaths;
+    }
+
+    public void setDeaths(int deaths) {
+        this.deaths = deaths;
+    }
 }

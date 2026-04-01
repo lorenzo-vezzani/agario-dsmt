@@ -28,7 +28,9 @@ public class UserController {
                         user.getCreatedAt(),
                         user.getGamesPlayed(),
                         user.getGamesWon(),
-                        user.getDotsEaten())
+                        user.getDotsEaten(),
+                        user.getDeaths()
+                    )
                 );
     }
 }
