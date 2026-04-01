@@ -9,6 +9,7 @@ public class AgarioConfig {
 
     private String supervisorIp;
     private int supervisorPort;
+    private String supervisorCookie;
 
     public String getSupervisorIp() {
         return supervisorIp;
@@ -24,5 +25,13 @@ public class AgarioConfig {
 
     public void setSupervisorPort(int supervisorPort) {
         this.supervisorPort = supervisorPort;
+    }
+
+    public String getSupervisorCookie() {
+        return supervisorCookie;
+    }
+
+    public void setSupervisorCookie(String supervisorCookie) {
+        this.supervisorCookie = supervisorCookie;
     }
 }
