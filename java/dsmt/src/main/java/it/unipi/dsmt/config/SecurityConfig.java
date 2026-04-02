@@ -22,10 +22,10 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form
-                        .loginPage("/login")                // tua pagina
-                        .loginProcessingUrl("/auth/login")       // dove invia il form
-                        .defaultSuccessUrl("/home", true)   // redirect dopo login OK
-                        .failureUrl("/login?error=true")    // se fallisce
+                        .loginPage("/login")                                        // login page
+                        .loginProcessingUrl("/auth/login")                            // where the form is sent
+                        .defaultSuccessUrl("/home", true)   // where to redirect after the successful login
+                        .failureUrl("/login?error=true")          // where to redirect after the failed login
                         .permitAll()
                 )
                 .logout(logout -> logout
