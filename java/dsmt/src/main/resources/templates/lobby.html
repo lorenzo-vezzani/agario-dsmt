@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="it" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BallZ — Lobby</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <link th:href="@{/css/general.css}" rel="stylesheet"/>
+    <style>
+        /* ── Lobby-specific overrides ───────────────────────── */
+        .panel {
+            width: min(640px, 94vw);
+            padding: 44px 52px 44px;
+        }
+
+        /* Header row: logo + user badge */
+        .lobby-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 36px;
+        }
+        .lobby-header .logo { text-align: left; font-size: 2.6rem; }
+        .lobby-header .subtitle { text-align: left; margin: 4px 0 0; }
+
+        .user-badge {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+        }
+        .user-badge .badge-label {
+            font-size: 0.52rem;
+            letter-spacing: 0.3em;
+            color: rgba(0,255,136,0.35);
+            text-transform: uppercase;
+        }
+        .user-badge .badge-name {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--green);
+            text-shadow: 0 0 12px var(--green-glow);
+            letter-spacing: 0.12em;
+        }
+
+        /* Section title */
+        .section-title {
+            font-size: 0.58rem;
+            letter-spacing: 0.38em;
+            color: rgba(0,255,136,0.4);
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .section-title .marker { color: var(--green); margin-right: 6px; }
+
+        /* Games list */
+        .games-list { display: flex; flex-direction: column; gap: 8px; }
+
+        .game-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border: 1px solid rgba(0,255,136,0.13);
+            background: rgba(0,255,136,0.02);
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .game-row:hover {
+            border-color: rgba(0,255,136,0.35);
+            background: rgba(0,255,136,0.05);
+        }
+
+        .game-info { display: flex; flex-direction: column; gap: 4px; }
+
+        .game-id {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--green);
+            letter-spacing: 0.12em;
+        }
+        .game-id::before { content: 'GAME '; font-size: 0.6rem; opacity: 0.45; }
+
+        .game-addr {
+            font-size: 0.68rem;
+            color: rgba(0,255,136,0.42);
+            letter-spacing: 0.08em;
+        }
+
+        /* Join button — compact inline variant */
+        .join-btn {
+            padding: 8px 20px;
+            background: transparent;
+            border: 1px solid rgba(0,255,136,0.4);
+            color: var(--green);
+            font-family: 'Orbitron', monospace;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            text-decoration: none;
+            cursor: none;
+            white-space: nowrap;
+            transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
+        }
+        .join-btn:hover {
+            background: rgba(0,255,136,0.1);
+            border-color: var(--green);
+            box-shadow: 0 0 18px var(--green-glow);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 28px 0;
+            color: rgba(0,255,136,0.22);
+            font-size: 0.72rem;
+            letter-spacing: 0.18em;
+            border: 1px dashed rgba(0,255,136,0.1);
+        }
+
+        /* Bottom actions */
+        .actions { margin-top: 28px; display: flex; flex-direction: column; gap: 10px; }
+
+        .logout-link {
+            text-align: center;
+            margin-top: 10px;
+        }
+        .logout-link a {
+            font-size: 0.6rem;
+            letter-spacing: 0.25em;
+            color: rgba(255,34,68,0.4);
+            text-decoration: none;
+            text-transform: uppercase;
+            transition: color 0.15s;
+        }
+        .logout-link a:hover { color: var(--red); }
+    </style>
+</head>
+<body>
+
+<div id="mouse-dot"></div>
+<script th:src="@{/js/custom_pointer.js}"></script>
+
+<div class="main-box">
+    <div class="panel">
+        <div class="logo">BallZ</div>
+        <div class="subtitle">Balls Battle Royale</div>
+
+        <!-- ── LIVE GAMES ────────────────────────────────────── -->
+        <div class="section-title">
+            <span class="marker">▸</span>Live Games
+        </div>
+
+        <div class="games-list">
+            <!-- Populated by Thymeleaf from model attribute "games" -->
+            <!-- Each game: gameId (String), hostIp (String), port (int) -->
+
+            <!--
+            <div th:if="${games.isEmpty()}" class="empty-state">
+                NO ACTIVE GAMES — START ONE BELOW
+            </div>
+            -->
+
+            <div th:if="${games == null or games.isEmpty()}" class="game-row">
+                <div class="game-info">
+                    <span class="game-id" th:text="a"></span>
+                    <span class="game-addr" th:text="localhost"></span>
+                </div>
+                <a class="join-btn"
+                   th:href="@{/game(gameId='a', hostIp='localhost')}">
+                    ▶ Join
+                </a>
+            </div>
+
+            <div th:each="game : ${games}" class="game-row">
+                <div class="game-info">
+                    <span class="game-id" th:text="${game.gameId}">GAME-ID</span>
+                    <span class="game-addr" th:text="${game.hostIp}">a.b.c.d</span>
+                </div>
+                <a class="join-btn"
+                   th:href="@{/game(gameId=${game.gameId}, hostIp=${game.hostIp})}">
+                    ▶ Join
+                </a>
+            </div>
+        </div>
+
+        <!-- ── ACTIONS ───────────────────────────────────────── -->
+        <div class="actions">
+            <!-- POST a /game/new: il server crea il game e redirige a /lobby -->
+            <form th:action="@{/game/new}" method="post">
+                <button class="connect-btn" type="submit">+ New Game</button>
+            </form>
+        </div>
+
+        <!-- ── MESSAGES ──────────────────────────────────────── -->
+        <div class="error-box"
+             th:classappend="${param.error != null} ? ' visible'"
+             th:text="${param.error != null} ? '> ' + ${param.error} : ''"></div>
+
+        <div class="error-box"
+             th:classappend="${param.created != null} ? ' visible'"
+             th:text="${param.created != null} ? '> GAME CREATED: ' + ${param.created} : ''"
+             style="border-color:rgba(0,255,136,.35);background:rgba(0,255,136,.06);color:#00ff88"></div>
+
+        <!-- ── LOGOUT ────────────────────────────────────────── -->
+        <div class="logout-link">
+            <form th:action="@{/auth/logout}" method="post" style="display:inline">
+                <button type="submit"
+                        style="background:none;border:none;font-family:inherit;cursor:none">
+                    <a style="pointer-events:none">▸ Logout</a>
+                </button>
+            </form>
+        </div>
+
+    </div>
+</div>
+
+</body>
+</html>

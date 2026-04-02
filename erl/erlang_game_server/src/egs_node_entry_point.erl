@@ -10,7 +10,11 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 
--define(WS_PORT,    49153).
+-define(WS_PORT, 49153).
+-define(CERT, "cert.pem").
+-define(KEY, "key.pem").
+-define(APP_NAME, egs).
+
 -define(LIST,       ws_list).
 
 %%% Module specific cli print
@@ -51,13 +55,17 @@ start(_StartType, _StartArgs) ->
     %% Start a HTTP listener on port 49153.
     %% Cowboy will upgrade incoming HTTP requests to WebSocket
     %% automatically when the handler returns {cowboy_websocket, ...}
-    {ok, _} = cowboy:start_clear(
+    {ok, _} = cowboy:start_tls(
 
         % name
         ?LIST,
 
-        % options (just port here)
-        [{port, ?WS_PORT}],
+        % options
+        [
+            {port, ?WS_PORT},
+            {certfile, filename:join(code:priv_dir(?APP_NAME), ?CERT)},
+            {keyfile,  filename:join(code:priv_dir(?APP_NAME), ?KEY)}
+        ],
 
         % Link this listener to the previous map
         #{env => #{dispatch => Websocket_dispatch}}
