@@ -1,0 +1,95 @@
+
+#game-screen {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+}
+
+#game-screen.active { display: flex; }
+
+.hud {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 10px 14px;
+    flex-shrink: 0;
+}
+
+.hud-info {
+    font-size: 0.65rem;
+    letter-spacing: 0.18em;
+    color: rgba(0,255,136,0.45);
+    line-height: 1.8;
+}
+
+.hud-info b { color: var(--green); font-weight: normal; }
+
+.hud-players {
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    color: rgba(0,255,136,0.35);
+}
+
+.hud-players b { color: var(--green); }
+
+/* zoom indicator in HUD */
+#hud-zoom {
+    font-size: 0.65rem;
+    letter-spacing: 0.14em;
+    color: rgba(0,255,136,0.45);
+}
+#hud-zoom b { color: var(--green); }
+
+.quit-btn {
+    padding: 7px 22px;
+    background: transparent;
+    border: 1px solid rgba(255,34,68,0.4);
+    color: #ff4466;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    cursor: none;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+.quit-btn:hover {
+    background: rgba(255,34,68,0.1);
+    box-shadow: 0 0 16px var(--red-glow);
+}
+
+/* Canvas fills the remaining space */
+#arena-canvas {
+    display: block;
+    flex: 1;
+    width: 100%;
+    /* no fixed border — the canvas covers the whole game area */
+}
+
+.logout-form {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+}
+
+.logout-btn {
+    width: 74px;
+    height: 34px;
+    border: 1px solid rgba(255,34,68,0.4);
+    background: transparent;
+    color: #ff4466;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.8rem;
+    cursor: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.logout-btn:hover {
+    background: rgba(255,34,68,0.1);
+    box-shadow: 0 0 12px rgba(255,34,68,0.4);
+}
