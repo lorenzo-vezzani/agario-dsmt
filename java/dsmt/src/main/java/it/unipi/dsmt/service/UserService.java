@@ -22,4 +22,17 @@ public class UserService {
 
         return foundUser;
     }
+
+    public void updateUserStats(String username, boolean isUserWinner, int dotsEaten, int deaths) {
+        User foundUser = getUserByUsername(username);
+
+        foundUser.setGamesPlayed(foundUser.getGamesPlayed() + 1);
+        if (isUserWinner) {
+            foundUser.setGamesWon(foundUser.getGamesWon() + 1);
+        }
+        foundUser.setDotsEaten(foundUser.getDotsEaten() + dotsEaten);
+        foundUser.setDeaths(foundUser.getDeaths() + deaths);
+
+        repo.save(foundUser);
+    }
 }
