@@ -3,6 +3,9 @@
     position: absolute; inset: 0;
     display: none;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
 }
 
 #game-screen.active { display: flex; }
@@ -12,8 +15,7 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: 10px 14px;
-    flex-shrink: 0;
+    padding: 0 14px;
 }
 
 .hud-info {
@@ -62,10 +64,12 @@
 
 /* Canvas fills the remaining space */
 #arena-canvas {
+    border: 1px solid rgba(0,255,136,0.18);
+    box-shadow:
+        0 0 0 1px rgba(0,255,136,0.05),
+        0 0 40px var(--green-glow),
+        0 0 100px rgba(0,255,136,0.06);
     display: block;
-    flex: 1;
-    width: 100%;
-    /* no fixed border — the canvas covers the whole game area */
 }
 
 .logout-form {
