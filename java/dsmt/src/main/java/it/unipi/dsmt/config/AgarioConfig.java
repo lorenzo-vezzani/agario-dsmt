@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 public class AgarioConfig {
 
     private String supervisorIp;
-    private int supervisorPort;
+    private String selfErlangIp;
     private String supervisorCookie;
 
     public String getSupervisorIp() {
@@ -19,12 +19,12 @@ public class AgarioConfig {
         this.supervisorIp = supervisorIp;
     }
 
-    public int getSupervisorPort() {
-        return supervisorPort;
+    public String getSelfErlangIp() {
+        return selfErlangIp;
     }
 
-    public void setSupervisorPort(int supervisorPort) {
-        this.supervisorPort = supervisorPort;
+    public void setSelfErlangIp(String selfErlangIp) {
+        this.selfErlangIp = selfErlangIp;
     }
 
     public String getSupervisorCookie() {
