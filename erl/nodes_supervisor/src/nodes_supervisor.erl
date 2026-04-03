@@ -16,7 +16,6 @@
 -define(SERVER, ?MODULE).
 
 -define(INITIAL_NODES, [
-    'egs@10.2.1.4',
     'egs@10.2.1.5',
     'egs@10.2.1.6'
 ]).
@@ -95,17 +94,22 @@ handle_call(start_game, _From, State) ->
             GameId = generate_game_id(),
 
             %% Start the game on the selected node via RPC
-            ok = rpc:call(TargetNode, egs_supervisor, start_game, [GameId]),
+            case rpc:call(TargetNode, egs_supervisor, start_game, [GameId]) of
+                ok ->
+                    %% Update internal state
+                    NewGameProc = maps:put(GameId, TargetNode, State#state.game_proc),
+                    NewNodeLoad = maps:update_with(TargetNode, fun(N) -> N + 1 end, 1,
+                                                State#state.node_load),
+                    NewState = State#state{game_proc = NewGameProc,
+                                        node_load = NewNodeLoad},
 
-            %% Update internal state
-            NewGameProc = maps:put(GameId, TargetNode, State#state.game_proc),
-            NewNodeLoad = maps:update_with(TargetNode, fun(N) -> N + 1 end, 1,
-                                           State#state.node_load),
-            NewState = State#state{game_proc = NewGameProc,
-                                   node_load = NewNodeLoad},
+                    print_cli("Game ~p successfully started on ~p", [GameId, TargetNode]),
+                    {reply, {ok, GameId, TargetNode}, NewState};
+                {badrpc, Reason} ->
+                    print_cli("rpc:call failed on node ~p: ~p", [TargetNode, Reason]),
+                    {reply, {error, {node_unavailable, Reason}}, State}
+            end
 
-            print_cli("Game ~p started on ~p", [GameId, TargetNode]),
-            {reply, {ok, GameId, TargetNode}, NewState}
     end;
 
 

@@ -72,7 +72,7 @@ init(GameId) ->
     % so terminate/2 is always called for proper ETS cleanup
     process_flag(trap_exit, true),
 
-    print_cli("{init/1} starting game=~s", [GameId]),
+    print_cli("{init/1} starting game=~s", [binary:encode_hex(GameId)]),
 
     % register game, for ETS table
     egs_supervisor:register_game(GameId, self()),
@@ -92,17 +92,22 @@ init(GameId) ->
 
 %%% Called when the game process is shutting down (normally or after a crash)
 terminate(_Reason, State) ->
-    print_cli("{terminate/2} game=~s shutting down", [maps:get(game_id, State)]),
+    print_cli("{terminate/2} game=~s shutting down", [binary:encode_hex(maps:get(game_id, State))]),
 
     % close webosockets
     lists:foreach(
-        fun(#{ws_pid := Pid}) -> Pid ! {close, 1000, <<"gameover">>} end,
-        maps:values(maps:get(?STATE_CLIENTS, State))
-    ),
+         fun(#{ws_pid := Pid}) -> Pid ! {close, 1000, <<"gameover">>} end,
+         maps:values(maps:get(?STATE_CLIENTS, State))
+     ),
 
-    % unregitser game
-    egs_supervisor:unregister_game(maps:get(game_id, State)),
+    GameId = maps:get(game_id, State),
+    Stats = maps:get(?STATE_STATS, State), % Recupera i dati necessari
+    
+    % Notifica il nodo remoto asincronamente per non bloccare la chiusura
+    gen_server:call({nodes_supervisor, 'nodes_supervisor@10.2.1.11'}, 
+                   {game_terminated, GameId, Stats}),
 
+    egs_supervisor:unregister_game(GameId),
     ok.
 
 
@@ -115,7 +120,7 @@ terminate(_Reason, State) ->
 %%% as a new player in the game GameId
 %%% Via cast message, send the join information to the correct Game Process
 join(GameId, PlayerId) ->
-    print_cli("{join/2} game=~s player=~s", [GameId, PlayerId]),
+    print_cli("{join/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
 
     % lookup game by its id
     case egs_supervisor:lookup(GameId) of
@@ -139,7 +144,7 @@ join(GameId, PlayerId) ->
 %%% GameId: binary game identifier
 %%% PlayerId: binary player name
 leave(GameId, PlayerId) ->
-    print_cli("{leave/2} game=~s player=~s", [GameId, PlayerId]),
+    print_cli("{leave/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
 
     % search for the specified game
     case egs_supervisor:lookup(GameId) of
@@ -405,8 +410,6 @@ handle_info(gameover, State) ->
     Stats = maps:get(?STATE_STATS, State),
     Balls = maps:get(?STATE_BALL, State),
     Payload = egs_game_module_utils:encode__gameover(Stats, Balls),
-
-    egs_supervisor:stop_game(maps:get('game-id', Payload)),
 
     % broadcast the ending state and information
     broadcast(Clients, gameover, Payload),

@@ -154,8 +154,7 @@ stop_game(GameId, Stats) ->
     case lookup(GameId) of
 
         % if ok, and Pid is given back
-        {ok, Pid} -> 
-
+        {ok, Pid} ->
             % call to supervisor to terminate this child
             supervisor:terminate_child(?MODULE, Pid),
 
@@ -165,7 +164,6 @@ stop_game(GameId, Stats) ->
             
             %% contacting the supervisor to notify that a game is terminated
             gen_server:call({nodes_supervisor, 'nodes_supervisor@10.2.1.11'}, {game_terminated, GameId, Stats}),
-
 
             unregister_game(GameId),
 
@@ -218,12 +216,12 @@ lookup(GameId) ->
 %%% GameId: the game identifier
 %%% Pid:    the pid of the game process (self() of the game prcess)
 register_game(GameId, Pid) ->
-    print_cli("{register_game/2} game=~s pid=~p", [GameId, Pid]),
+    print_cli("{register_game/2} game=~s pid=~p", [binary:encode_hex(GameId), Pid]),
     ets:insert(?GAME_PROC_TABLE, {GameId, Pid}).
 
 
 %%% Remove game from the table.
 %%% Called by egs_game_module:terminate/2 when the game process is shutting down.
 unregister_game(GameId) ->
-    print_cli("{unregister_game/1} game=~s", [GameId]),
+    print_cli("{unregister_game/1} game=~s", [binary:encode_hex(GameId)]),
     ets:delete(?GAME_PROC_TABLE, GameId).
