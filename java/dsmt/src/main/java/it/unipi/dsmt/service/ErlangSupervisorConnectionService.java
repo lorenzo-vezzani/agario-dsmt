@@ -41,22 +41,44 @@ responses:
 @Service
 public class ErlangSupervisorConnectionService {
 
+    /**
+     * For saving player stats
+     */
     @Autowired
     private UserService userService;
 
+    /**
+     * For gathering erlang configs
+     */
     @Autowired
     private AgarioConfig agarioConfig;
 
+    /**
+     * For erlang listener scheduling
+     */
     @Qualifier("applicationTaskExecutor")
     @Autowired
     private TaskExecutor taskExecutor;
 
+    /**
+     * For closing application if something goes wrong
+     */
     @Autowired
     ConfigurableApplicationContext applicationContext;
 
+    /**
+     * For erlang listener stopping
+     */
     private final AtomicBoolean running = new AtomicBoolean(true);
 
+    /**
+     * Associates request ID to the corresponding future
+     */
     private final ConcurrentHashMap<Integer, CompletableFuture<OtpErlangTuple>> pendingRequests = new ConcurrentHashMap<>();
+
+    /**
+     * Stores the next request ID to be used
+     */
     private final AtomicInteger nextRequestId = new AtomicInteger(0);
 
     private OtpNode currentNode;
