@@ -35,6 +35,10 @@
     </div>
 
     <button class="connect-btn" id="connect-btn">▶ Connect</button>
+
+      <div class="page-link">
+          <a th:href="@{/statistics}">Check your stats</a>
+      </div>
     <div class="error-box" id="error-box"></div>
 
     <form th:action="@{/logout}" method="post" class="logout-form">

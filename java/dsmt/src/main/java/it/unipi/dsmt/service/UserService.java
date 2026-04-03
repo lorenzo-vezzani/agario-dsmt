@@ -1,5 +1,6 @@
 package it.unipi.dsmt.service;
 
+import it.unipi.dsmt.dto.UserStatsDTO;
 import it.unipi.dsmt.exception.UserNotFoundException;
 import org.springframework.stereotype.Service;
 import it.unipi.dsmt.model.User;
@@ -34,5 +35,35 @@ public class UserService {
         foundUser.setDeaths(foundUser.getDeaths() + deaths);
 
         repo.save(foundUser);
+    }
+
+    public UserStatsDTO getUserStats(String username) {
+        User user = getUserByUsername(username);
+
+        int gamesPlayed = user.getGamesPlayed();
+        int gamesWon = user.getGamesWon();
+        int gamesLost = Math.max(0, gamesPlayed - gamesWon);
+        int kills = user.getDotsEaten();
+        int deaths = user.getDeaths();
+
+        double winPerc = gamesPlayed > 0 ? (gamesWon  * 100.0 / gamesPlayed) : 0.0;
+        double lossPerc = gamesPlayed > 0 ? (gamesLost * 100.0 / gamesPlayed) : 0.0;
+        double avgKills = gamesPlayed > 0 ? ((double) kills / gamesPlayed) : 0.0;
+        double avgDeaths = gamesPlayed > 0 ? ((double) deaths    / gamesPlayed) : 0.0;
+
+        return new UserStatsDTO(
+            user.getUsername(),
+            user.getEmail(),
+            user.getCreatedAt(),
+            gamesPlayed,
+            gamesWon,
+            gamesLost,
+            deaths,
+            kills,
+            winPerc,
+            lossPerc,
+            avgKills,
+            avgDeaths
+        );
     }
 }

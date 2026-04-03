@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="it" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>BallZ – Stats</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+    <style>
+        :root {
+            --bg:        #080b10;
+            --panel:     #0d1117;
+            --border:    #1e2a3a;
+            --accent:    #00e5ff;
+            --accent2:   #ff3d71;
+            --accent3:   #ffe600;
+            --text:      #c8d8e8;
+            --muted:     #4a6070;
+            --glow:      0 0 12px var(--accent), 0 0 30px rgba(0,229,255,.25);
+            --glow2:     0 0 12px var(--accent2), 0 0 30px rgba(255,61,113,.25);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── scanline overlay ── */
+        body::before {
+            content: '';
+            position: fixed; inset: 0; z-index: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0,0,0,.15) 2px,
+                rgba(0,0,0,.15) 4px
+            );
+            pointer-events: none;
+        }
+
+        /* ── grid background ── */
+        body::after {
+            content: '';
+            position: fixed; inset: 0; z-index: 0;
+            background-image:
+                linear-gradient(rgba(0,229,255,.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,229,255,.04) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+        }
+
+        /* ── custom cursor ── */
+        #mouse-dot {
+            position: fixed; width: 10px; height: 10px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: var(--glow);
+            pointer-events: none; z-index: 9999;
+            transform: translate(-50%, -50%);
+            transition: transform .1s, width .15s, height .15s;
+        }
+
+        /* ── layout ── */
+        .page {
+            position: relative; z-index: 1;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 48px 24px 80px;
+        }
+
+        /* ── header ── */
+        .header {
+            text-align: center;
+            margin-bottom: 56px;
+        }
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: clamp(2.4rem, 7vw, 4rem);
+            font-weight: 900;
+            color: var(--accent);
+            text-shadow: var(--glow);
+            letter-spacing: .12em;
+            animation: flicker 6s infinite;
+        }
+        .subtitle {
+            font-size: .75rem;
+            letter-spacing: .35em;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+        .player-tag {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 6px 20px;
+            border: 1px solid var(--accent);
+            border-radius: 2px;
+            font-size: .85rem;
+            color: var(--accent);
+            letter-spacing: .15em;
+            box-shadow: var(--glow);
+        }
+        .player-tag span { color: #fff; }
+
+        /* ── section title ── */
+        .section-label {
+            font-family: 'Orbitron', sans-serif;
+            font-size: .65rem;
+            letter-spacing: .4em;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: 16px;
+            display: flex; align-items: center; gap: 12px;
+        }
+        .section-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* ── big stats row ── */
+        .big-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 2px;
+            margin-bottom: 2px;
+        }
+
+        .stat-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 28px 20px 22px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            transition: border-color .25s, transform .2s;
+            cursor: default;
+        }
+        .stat-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-3px);
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute; inset: 0;
+            background: linear-gradient(135deg, rgba(0,229,255,.05) 0%, transparent 60%);
+            opacity: 0;
+            transition: opacity .25s;
+        }
+        .stat-card:hover::before { opacity: 1; }
+
+        .stat-card.danger:hover  { border-color: var(--accent2); }
+        .stat-card.danger::before { background: linear-gradient(135deg, rgba(255,61,113,.05) 0%, transparent 60%); }
+        .stat-card.warn:hover   { border-color: var(--accent3); }
+        .stat-card.warn::before  { background: linear-gradient(135deg, rgba(255,230,0,.05) 0%, transparent 60%); }
+
+        .stat-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: clamp(1.8rem, 4vw, 2.6rem);
+            font-weight: 700;
+            line-height: 1;
+            color: #fff;
+        }
+        .stat-card:hover .stat-value         { color: var(--accent);  text-shadow: var(--glow); }
+        .stat-card.danger:hover .stat-value  { color: var(--accent2); text-shadow: var(--glow2); }
+        .stat-card.warn:hover .stat-value    { color: var(--accent3); }
+
+        .stat-label {
+            font-size: .65rem;
+            letter-spacing: .25em;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-top: 8px;
+        }
+
+        /* ── progress bars ── */
+        .bars-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2px;
+            margin-top: 2px;
+        }
+        @media (max-width: 520px) { .bars-row { grid-template-columns: 1fr; } }
+
+        .bar-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 22px 24px;
+        }
+        .bar-header {
+            display: flex; justify-content: space-between; align-items: baseline;
+            margin-bottom: 10px;
+        }
+        .bar-name {
+            font-size: .7rem;
+            letter-spacing: .2em;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+        .bar-pct {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+        }
+        .bar-track {
+            height: 6px;
+            background: var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 1s cubic-bezier(.4,0,.2,1);
+        }
+        .bar-fill.win  { background: linear-gradient(90deg, var(--accent), #00fff7); box-shadow: 0 0 8px var(--accent); }
+        .bar-fill.loss { background: linear-gradient(90deg, var(--accent2), #ff7ba5); box-shadow: 0 0 8px var(--accent2); }
+
+        /* ── averages ── */
+        .avg-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2px;
+            margin-top: 2px;
+            margin-bottom: 40px;
+        }
+        @media (max-width: 520px) { .avg-row { grid-template-columns: 1fr; } }
+
+        .avg-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .avg-icon {
+            font-size: 1.8rem;
+            flex-shrink: 0;
+        }
+        .avg-info { flex: 1; }
+        .avg-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #fff;
+        }
+        .avg-label {
+            font-size: .62rem;
+            letter-spacing: .22em;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-top: 3px;
+        }
+
+        /* ── meta info ── */
+        .meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 40px;
+        }
+        .meta-chip {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            font-size: .7rem;
+            letter-spacing: .15em;
+            color: var(--muted);
+        }
+        .meta-chip strong { color: var(--text); }
+
+        /* ── back link ── */
+        .back-link {
+            display: inline-flex; align-items: center; gap: 8px;
+            margin-top: 40px;
+            color: var(--muted);
+            text-decoration: none;
+            font-size: .75rem;
+            letter-spacing: .2em;
+            text-transform: uppercase;
+            transition: color .2s;
+        }
+        .back-link:hover { color: var(--accent); }
+        .back-link::before { content: '←'; }
+
+        /* ── flicker animation ── */
+        @keyframes flicker {
+            0%,19%,21%,23%,25%,54%,56%,100% { opacity: 1; }
+            20%,24%,55% { opacity: .4; }
+        }
+
+        /* ── entry animation ── */
+        .stat-card, .bar-card, .avg-card {
+            animation: slideUp .5s ease both;
+        }
+        .stat-card:nth-child(1) { animation-delay: .05s }
+        .stat-card:nth-child(2) { animation-delay: .10s }
+        .stat-card:nth-child(3) { animation-delay: .15s }
+        .stat-card:nth-child(4) { animation-delay: .20s }
+        .stat-card:nth-child(5) { animation-delay: .25s }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(18px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="mouse-dot"></div>
+<script th:src="@{/js/custom_pointer.js}" type="text/javascript"></script>
+
+<div class="page">
+
+    <!-- ── Header ── -->
+    <header class="header">
+        <div class="logo">BallZ</div>
+        <div class="subtitle">BallZone Battle Royale</div>
+        <div class="player-tag">PLAYER // <span th:text="${stats.username()}">USERNAME</span></div>
+    </header>
+
+    <!-- ── Partite ── -->
+    <div class="section-label">Partite</div>
+    <div class="big-stats">
+        <div class="stat-card">
+            <div class="stat-value" th:text="${stats.gamesPlayed()}">0</div>
+            <div class="stat-label">Giocate</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" th:text="${stats.gamesWon()}">0</div>
+            <div class="stat-label">Vittorie</div>
+        </div>
+        <div class="stat-card danger">
+            <div class="stat-value" th:text="${stats.gamesLost()}">0</div>
+            <div class="stat-label">Sconfitte</div>
+        </div>
+        <div class="stat-card warn">
+            <div class="stat-value" th:text="${stats.dotsEaten()}">0</div>
+            <div class="stat-label">Kills</div>
+        </div>
+        <div class="stat-card danger">
+            <div class="stat-value" th:text="${stats.deaths()}">0</div>
+            <div class="stat-label">Morti</div>
+        </div>
+    </div>
+
+    <!-- ── Percentuali ── -->
+    <div class="section-label" style="margin-top:40px">Percentuali</div>
+    <div class="bars-row">
+        <div class="bar-card">
+            <div class="bar-header">
+                <span class="bar-name">Win rate</span>
+                <span class="bar-pct" style="color:var(--accent)"
+                      th:text="${#numbers.formatDecimal(stats.winPercentage(), 1, 1) + '%'}">0.0%</span>
+            </div>
+            <div class="bar-track">
+                <div class="bar-fill win"
+                     th:style="'width:' + ${stats.winPercentage()} + '%'"></div>
+            </div>
+        </div>
+        <div class="bar-card">
+            <div class="bar-header">
+                <span class="bar-name">Loss rate</span>
+                <span class="bar-pct" style="color:var(--accent2)"
+                      th:text="${#numbers.formatDecimal(stats.lossPercentage(), 1, 1) + '%'}">0.0%</span>
+            </div>
+            <div class="bar-track">
+                <div class="bar-fill loss"
+                     th:style="'width:' + ${stats.lossPercentage()} + '%'"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Medie ── -->
+    <div class="section-label" style="margin-top:40px">Medie per partita</div>
+    <div class="avg-row">
+        <div class="avg-card">
+            <div class="avg-icon">⚡</div>
+            <div class="avg-info">
+                <div class="avg-value"
+                     th:text="${#numbers.formatDecimal(stats.avgKillsPerGame(), 1, 2)}">0.00</div>
+                <div class="avg-label">Kills / partita</div>
+            </div>
+        </div>
+        <div class="avg-card">
+            <div class="avg-icon">💀</div>
+            <div class="avg-info">
+                <div class="avg-value"
+                     th:text="${#numbers.formatDecimal(stats.avgDeathsPerGame(), 1, 2)}">0.00</div>
+                <div class="avg-label">Morti / partita</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Meta ── -->
+    <div class="section-label">Account</div>
+    <div class="meta-row">
+        <div class="meta-chip">
+            Email // <strong th:text="${stats.email()}">—</strong>
+        </div>
+        <div class="meta-chip">
+            Membro dal //
+            <strong th:text="${#temporals.format(stats.createdAt(), 'dd MMM yyyy')}">—</strong>
+        </div>
+    </div>
+
+    <a class="back-link" th:href="@{/home}">Torna alla home</a>
+
+</div>
+
+<script>
+    // Custom pointer sync (se non già gestito da custom_pointer.js)
+    const dot = document.getElementById('mouse-dot');
+    if (dot) {
+        document.addEventListener('mousemove', e => {
+            dot.style.left = e.clientX + 'px';
+            dot.style.top  = e.clientY + 'px';
+        });
+    }
+
+    // Anima le barre al caricamento
+    document.querySelectorAll('.bar-fill').forEach(el => {
+        const target = el.style.width;
+        el.style.width = '0';
+        requestAnimationFrame(() => {
+            setTimeout(() => { el.style.width = target; }, 100);
+        });
+    });
+</script>
+
+</body>
+</html>
