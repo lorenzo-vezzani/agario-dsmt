@@ -406,6 +406,8 @@ handle_info(gameover, State) ->
     Balls = maps:get(?STATE_BALL, State),
     Payload = egs_game_module_utils:encode__gameover(Stats, Balls),
 
+    egs_supervisor:stop_game(maps:get('game-id', Payload)),
+
     % broadcast the ending state and information
     broadcast(Clients, gameover, Payload),
 
