@@ -24,7 +24,7 @@ public class UserService {
     }
 
     public void updateUserStats(String username, boolean isUserWinner, int dotsEaten, int deaths) {
-        User foundUser = getUserByUsername(username);
+        User foundUser = repo.findById(username).orElse(null);
         if (foundUser == null) {
             return;
         }
