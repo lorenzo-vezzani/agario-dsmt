@@ -7,6 +7,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 public class PageController {
@@ -65,5 +66,26 @@ public class PageController {
             return "redirect:/login";
         }
         return "game_servers";
+    }
+
+    @GetMapping("/game")
+    public String gamePage(
+            Authentication authentication,
+            @RequestParam String gameId,
+            @RequestParam String hostIp,
+            @RequestParam Integer hostPort,
+            Model model
+    ) {
+        if (!(authentication != null && authentication.isAuthenticated() && !(authentication instanceof AnonymousAuthenticationToken))) {
+            // user not authenticated
+            return "redirect:/login";
+        }
+
+        model.addAttribute("gameId", gameId);
+        model.addAttribute("hostIp", hostIp);
+        model.addAttribute("hostPort", hostPort);
+        model.addAttribute("playerId", authentication.getName());
+        System.out.println("Player ID: " + authentication.getName());
+        return "game";
     }
 }
