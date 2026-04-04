@@ -1,0 +1,119 @@
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 24px;
+    background: rgba(0,255,136,0.02);
+    border: 1px solid var(--border);
+    box-shadow:
+            0 0 0 1px rgba(0,255,136,0.05),
+            0 0 30px var(--green-glow);
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+}
+
+/* Header */
+.table thead {
+    background: rgba(0,255,136,0.05);
+    text-transform: uppercase;
+}
+
+.table th {
+    padding: 12px 14px;
+    text-align: left;
+    color: var(--green);
+    border-bottom: 1px solid rgba(0,255,136,0.25);
+    font-size: 0.65rem;
+    letter-spacing: 0.25em;
+}
+
+/* Celle */
+.table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(0,255,136,0.08);
+    color: rgba(0,255,136,0.75);
+}
+
+/* Hover righe */
+.table tbody tr {
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+.table tbody tr:hover {
+    background: rgba(0,255,136,0.06);
+    box-shadow: inset 0 0 12px rgba(0,255,136,0.08);
+}
+
+/* Riga attiva / selezionata */
+.table tbody tr.active {
+    background: rgba(0,255,136,0.1);
+    box-shadow: inset 0 0 18px var(--green-glow);
+}
+
+/* Effetto "scanline" come panel */
+.table::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 3px,
+            rgba(0,0,0,0.05) 3px,
+            rgba(0,0,0,0.05) 4px
+    );
+}
+
+/* Container per evitare problemi con ::after */
+.table-wrapper {
+    position: relative;
+}
+
+.btn {
+    display: inline-block;
+    padding: 12px 18px;
+    border: 1px solid rgba(0,255,136,0.4);
+    background: rgba(0,255,136,0.03);
+    color: var(--green);
+    font-family: 'Orbitron', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    cursor: none;
+    position: relative;
+    overflow: hidden;
+    transition:
+            background 0.15s,
+            border-color 0.15s,
+            box-shadow 0.15s,
+            transform 0.05s;
+}
+
+.btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(0,255,136,0.08),
+            transparent
+    );
+    transform: translateX(-100%);
+    transition: transform 0.4s;
+}
+
+.btn:hover::before {
+    transform: translateX(100%);
+}
+
+.btn:hover {
+    background: rgba(0,255,136,0.08);
+    border-color: var(--green);
+    box-shadow: 0 0 18px var(--green-glow);
+}
+
+.btn:active {
+    transform: scale(0.97);
+    box-shadow: 0 0 10px var(--green-glow);
+}
