@@ -25,7 +25,7 @@
     start_link/0, 
     init/1,
     start_game/1,
-    stop_game/1,
+    stop_game/2,
     game_count/0,
     list_games/0,
     lookup/1,
@@ -34,6 +34,8 @@
 ]).
 
 -define(GAME_PROC_TABLE,    game_proc_table).
+
+-define(NODES_SUP, 'nodes_supervisor@10.2.1.11')
 
 dbg__crash_module() ->
     Arg = 10,
@@ -145,21 +147,24 @@ start_game(GameId) ->
 %%% Terminates the game process associated of GameId.
 %%% lookup pid in ETS, then asks the supervisor to terminate that child. 
 %%% The game process will run its terminate/2 callback, which unregisters it from ETS.
-stop_game(GameId) ->
+stop_game(GameId, Stats) ->
     print_cli("{stop_game/1} Request to stop game_id=~s", [GameId]),
 
     % perform TES lookup of GameId
     case lookup(GameId) of
 
         % if ok, and Pid is given back
-        {ok, Pid} -> 
-
+        {ok, Pid} ->
             % call to supervisor to terminate this child
             supervisor:terminate_child(?MODULE, Pid),
 
             % unregister from ets this pid
             % NOT NECESSARY if game process behaves normally (unregisters himself)
             % but needed if it crashes without unregistering
+            
+            %% contacting the supervisor to notify that a game is terminated
+            gen_server:call({nodes_supervisor, 'nodes_supervisor@10.2.1.11'}, {game_terminated, GameId, Stats}),
+
             unregister_game(GameId),
 
             % return ok
@@ -211,12 +216,12 @@ lookup(GameId) ->
 %%% GameId: the game identifier
 %%% Pid:    the pid of the game process (self() of the game prcess)
 register_game(GameId, Pid) ->
-    print_cli("{register_game/2} game=~s pid=~p", [GameId, Pid]),
+    print_cli("{register_game/2} game=~s pid=~p", [binary:encode_hex(GameId), Pid]),
     ets:insert(?GAME_PROC_TABLE, {GameId, Pid}).
 
 
 %%% Remove game from the table.
 %%% Called by egs_game_module:terminate/2 when the game process is shutting down.
 unregister_game(GameId) ->
-    print_cli("{unregister_game/1} game=~s", [GameId]),
+    print_cli("{unregister_game/1} game=~s", [binary:encode_hex(GameId)]),
     ets:delete(?GAME_PROC_TABLE, GameId).

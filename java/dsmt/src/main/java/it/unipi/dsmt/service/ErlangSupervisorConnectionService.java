@@ -247,7 +247,8 @@ public class ErlangSupervisorConnectionService {
         List<PlayerStatDTO> playerStats = stats.stats;
 
         for (PlayerStatDTO playerStat : playerStats) {
-            userService.updateUserStats(playerStat.id, false, playerStat.kills, playerStat.deaths);
+            boolean isWinner = playerStats.get(0).id.equals(playerStat.id);
+            userService.updateUserStats(playerStat.id, isWinner, playerStat.kills, playerStat.deaths);
         }
 
         OtpErlangTuple result = new OtpErlangTuple(new OtpErlangAtom("ok"));

@@ -3,3 +3,4 @@ erl/**/_build/
 erl/**/rebar.lock
 rebar.lock
 .idea/
+erl/erlang_game_server/root/
