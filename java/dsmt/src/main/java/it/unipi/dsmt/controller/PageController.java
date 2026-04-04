@@ -59,7 +59,7 @@ public class PageController {
         return "statistics";
     }
 
-    @GetMapping("/servers")
+    @GetMapping("/join")
     public String servers(Authentication authentication) {
         if (authentication == null) {
             return "redirect:/login";
