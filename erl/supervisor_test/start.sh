@@ -1,0 +1,1 @@
+erl -name supervisor@10.2.1.12 -setcookie cookie
