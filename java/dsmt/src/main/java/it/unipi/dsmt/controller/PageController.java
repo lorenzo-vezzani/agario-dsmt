@@ -65,7 +65,7 @@ public class PageController {
         if (authentication == null) {
             return "redirect:/login";
         }
-        return "game_servers";
+        return "games_list";
     }
 
     @GetMapping("/game")
