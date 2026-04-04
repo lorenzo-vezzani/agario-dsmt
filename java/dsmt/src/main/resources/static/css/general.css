@@ -1,52 +1,89 @@
 /*
-Basic, general CSS file for all pages
+    general.css — BallZone shared design system
+    Palette: dark blue-black bg · cyan accent · red danger
 */
+
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Design tokens ─────────────────────────────────── */
 :root {
-    --green:      #00ff88;
-    --green-dim:  rgba(0, 255, 136, 0.55);
-    --green-glow: rgba(0, 255, 136, 0.25);
-    --red:        #ff2244;
-    --red-glow:   rgba(255, 34, 68, 0.4);
-    --bg:         #040c07;
-    --panel-bg:   rgba(2, 18, 8, 0.95);
-    --border:     rgba(0, 255, 136, 0.2);
+    --accent:       #00e5ff;
+    --accent-dim:   rgba(0, 229, 255, 0.55);
+    --accent-glow:  rgba(0, 229, 255, 0.25);
+
+    --red:          #ff3d71;
+    --red-glow:     rgba(255, 61, 113, 0.35);
+
+    --warn:         #ffe600;
+    --warn-glow:    rgba(255, 230, 0, 0.25);
+
+    --bg:           #080b10;
+    --panel-bg:     rgba(10, 14, 20, 0.97);
+    --border:       #1e2a3a;
+    --border-dim:   rgba(30, 42, 58, 0.6);
+
+    --text:         #c8d8e8;
+    --text-muted:   #4a6070;
+
+    --glow:         0 0 12px var(--accent), 0 0 30px var(--accent-glow);
+    --glow-red:     0 0 12px var(--red),    0 0 30px var(--red-glow);
 }
 
+/* ── Base ───────────────────────────────────────────── */
 html, body {
     width: 100%; height: 100%;
     background: var(--bg);
-    color: var(--green);
+    color: var(--text);
     font-family: 'Share Tech Mono', monospace;
     cursor: none;
     overflow: hidden;
+
+    /* Subtle cyan grid */
     background-image:
-            linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
     background-size: 48px 48px;
 }
 
+/* Scanline overlay */
+body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.13) 2px,
+        rgba(0, 0, 0, 0.13) 4px
+    );
+    pointer-events: none;
+}
+
+/* ── Custom cursor ──────────────────────────────────── */
 #mouse-dot {
     position: fixed;
     width: 10px; height: 10px;
-    background: var(--red);
+    background: var(--accent);
     border-radius: 50%;
-    box-shadow: 0 0 8px var(--red), 0 0 20px var(--red-glow);
+    box-shadow: var(--glow);
     pointer-events: none;
     transform: translate(-50%, -50%);
     z-index: 9999;
     will-change: left, top;
 }
 
+/* ── Layout helpers ─────────────────────────────────── */
 .main-box {
     position: absolute; inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative; z-index: 1;
 }
 
+/* ── Panel / card ───────────────────────────────────── */
 .panel {
     position: relative;
     border: 1px solid var(--border);
@@ -54,97 +91,102 @@ html, body {
     padding: 52px 60px 48px;
     width: min(460px, 90vw);
     box-shadow:
-            0 0 0 1px rgba(0,255,136,0.06),
-            0 0 50px var(--green-glow),
-            inset 0 1px 0 rgba(0,255,136,0.07);
+        0 0 0 1px rgba(0, 229, 255, 0.05),
+        0 0 50px var(--accent-glow),
+        inset 0 1px 0 rgba(0, 229, 255, 0.06);
 }
 
-.panel::after {
-    content: '';
-    position: absolute; inset: 0;
-    background: repeating-linear-gradient(
-            0deg, transparent, transparent 3px,
-            rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px
-    );
-    pointer-events: none;
-}
-
+/* outer glow ring */
 .panel::before {
     content: '';
     position: absolute;
     inset: -4px;
-    border: 1px solid rgba(0,255,136,0.08);
+    border: 1px solid rgba(0, 229, 255, 0.07);
     pointer-events: none;
 }
 
+/* inner scanline texture */
+.panel::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        rgba(0, 0, 0, 0.04) 3px, rgba(0, 0, 0, 0.04) 4px
+    );
+    pointer-events: none;
+}
+
+/* ── Logo / branding ────────────────────────────────── */
 .logo {
     font-family: 'Orbitron', monospace;
     font-size: 3.2rem;
     font-weight: 900;
     letter-spacing: 0.18em;
     text-align: center;
-    color: var(--green);
-    text-shadow: 0 0 20px var(--green), 0 0 60px var(--green-glow), 0 0 100px var(--green-glow);
+    color: var(--accent);
+    text-shadow: var(--glow);
     animation: flicker 8s infinite;
 }
 
 @keyframes flicker {
     0%, 95%, 97%, 99%, 100% { opacity: 1; }
-    96%, 98% { opacity: 0.85; }
+    96%, 98%                 { opacity: 0.82; }
 }
 
 .subtitle {
     text-align: center;
     font-size: 0.62rem;
     letter-spacing: 0.38em;
-    color: rgba(0,255,136,0.35);
+    color: var(--text-muted);
     text-transform: uppercase;
     margin-top: 4px;
     margin-bottom: 40px;
 }
 
+/* ── Form fields ────────────────────────────────────── */
 .field + .field { margin-top: 18px; }
 
 .field-label {
     display: block;
     font-size: 0.6rem;
     letter-spacing: 0.3em;
-    color: rgba(0,255,136,0.5);
+    color: rgba(0, 229, 255, 0.5);
     text-transform: uppercase;
     margin-bottom: 7px;
 }
 
-.field-label .marker { color: var(--green); margin-right: 6px; }
+.field-label .marker { color: var(--accent); margin-right: 6px; }
 
 .field-input {
     width: 100%;
-    background: rgba(0,255,136,0.03);
-    border: 1px solid rgba(0,255,136,0.18);
-    color: var(--green);
+    background: rgba(0, 229, 255, 0.03);
+    border: 1px solid rgba(0, 229, 255, 0.15);
+    color: var(--text);
     font-family: 'Share Tech Mono', monospace;
     font-size: 0.95rem;
     padding: 10px 14px;
     outline: none;
     transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-    caret-color: var(--green);
+    caret-color: var(--accent);
 }
 
 .field-input:focus {
-    border-color: rgba(0,255,136,0.55);
-    background: rgba(0,255,136,0.06);
-    box-shadow: 0 0 14px var(--green-glow);
+    border-color: rgba(0, 229, 255, 0.5);
+    background: rgba(0, 229, 255, 0.05);
+    box-shadow: var(--glow);
 }
 
-.field-input::placeholder { color: rgba(0,255,136,0.18); }
+.field-input::placeholder { color: rgba(0, 229, 255, 0.15); }
 
+/* ── Primary button ─────────────────────────────────── */
 .connect-btn {
     display: block;
     width: 100%;
     margin-top: 32px;
     padding: 14px 20px;
     background: transparent;
-    border: 1px solid rgba(0,255,136,0.5);
-    color: var(--green);
+    border: 1px solid rgba(0, 229, 255, 0.45);
+    color: var(--accent);
     font-family: 'Orbitron', monospace;
     font-size: 0.78rem;
     font-weight: 700;
@@ -159,30 +201,31 @@ html, body {
 .connect-btn::before {
     content: '';
     position: absolute; inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(0,255,136,0.06), transparent);
+    background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.07), transparent);
     transform: translateX(-100%);
     transition: transform 0.4s;
 }
 
-.connect-btn:hover::before { transform: translateX(100%); }
+.connect-btn:hover::before  { transform: translateX(100%); }
 
 .connect-btn:hover {
-    background: rgba(0,255,136,0.1);
-    border-color: var(--green);
-    box-shadow: 0 0 24px var(--green-glow);
+    background: rgba(0, 229, 255, 0.08);
+    border-color: var(--accent);
+    box-shadow: var(--glow);
 }
 
 .connect-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     pointer-events: none;
 }
 
+/* ── Error / info box ───────────────────────────────── */
 .error-box {
     margin-top: 16px;
     padding: 10px 14px;
-    border: 1px solid rgba(255,34,68,0.35);
-    background: rgba(255,34,68,0.06);
-    color: #ff4466;
+    border: 1px solid var(--red-glow);
+    background: rgba(255, 61, 113, 0.06);
+    color: var(--red);
     font-size: 0.77rem;
     letter-spacing: 0.04em;
     line-height: 1.5;
@@ -199,6 +242,7 @@ html, body {
     to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ── Page link ──────────────────────────────────────── */
 .page-link {
     margin-top: 18px;
     text-align: center;
@@ -207,13 +251,13 @@ html, body {
 .page-link a {
     font-size: 0.65rem;
     letter-spacing: 0.25em;
-    color: rgba(0,255,136,0.45);
+    color: var(--text-muted);
     text-decoration: none;
     text-transform: uppercase;
     transition: color 0.15s, text-shadow 0.15s;
 }
 
 .page-link a:hover {
-    color: var(--green);
-    text-shadow: 0 0 10px var(--green-glow);
+    color: var(--accent);
+    text-shadow: 0 0 10px var(--accent-glow);
 }

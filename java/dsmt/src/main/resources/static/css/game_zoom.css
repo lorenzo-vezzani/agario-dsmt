@@ -1,4 +1,6 @@
 /* ─── GAME SCREEN ────────────────────────────────────── */
+/* Depends on general.css for :root tokens               */
+
 #game-screen {
     position: absolute; inset: 0;
     display: none;
@@ -7,6 +9,7 @@
 
 #game-screen.active { display: flex; }
 
+/* ── HUD bar ────────────────────────────────────────── */
 .hud {
     display: flex;
     align-items: center;
@@ -14,38 +17,46 @@
     width: 100%;
     padding: 10px 14px;
     flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: rgba(8, 11, 16, 0.85);
+    backdrop-filter: blur(4px);
 }
 
 .hud-info {
     font-size: 0.65rem;
     letter-spacing: 0.18em;
-    color: rgba(0,255,136,0.45);
+    color: rgba(0, 229, 255, 0.45);
     line-height: 1.8;
 }
 
-.hud-info b { color: var(--green); font-weight: normal; }
+.hud-info b {
+    color: var(--accent);
+    font-weight: normal;
+}
 
 .hud-players {
     font-size: 0.65rem;
     letter-spacing: 0.12em;
-    color: rgba(0,255,136,0.35);
+    color: rgba(0, 229, 255, 0.35);
 }
 
-.hud-players b { color: var(--green); }
+.hud-players b { color: var(--accent); }
 
-/* zoom indicator in HUD */
+/* ── Zoom indicator ─────────────────────────────────── */
 #hud-zoom {
     font-size: 0.65rem;
     letter-spacing: 0.14em;
-    color: rgba(0,255,136,0.45);
+    color: rgba(0, 229, 255, 0.45);
 }
-#hud-zoom b { color: var(--green); }
 
+#hud-zoom b { color: var(--accent); }
+
+/* ── Quit / danger button ───────────────────────────── */
 .quit-btn {
     padding: 7px 22px;
     background: transparent;
-    border: 1px solid rgba(255,34,68,0.4);
-    color: #ff4466;
+    border: 1px solid rgba(255, 61, 113, 0.35);
+    color: var(--red);
     font-family: 'Orbitron', monospace;
     font-size: 0.65rem;
     font-weight: 700;
@@ -56,18 +67,18 @@
 }
 
 .quit-btn:hover {
-    background: rgba(255,34,68,0.1);
-    box-shadow: 0 0 16px var(--red-glow);
+    background: rgba(255, 61, 113, 0.08);
+    box-shadow: var(--glow-red);
 }
 
-/* Canvas fills the remaining space */
+/* ── Arena canvas ───────────────────────────────────── */
 #arena-canvas {
     display: block;
     flex: 1;
     width: 100%;
-    /* no fixed border — the canvas covers the whole game area */
 }
 
+/* ── Logout (absolute, top-right) ───────────────────── */
 .logout-form {
     position: absolute;
     top: 14px;
@@ -77,19 +88,19 @@
 .logout-btn {
     width: 74px;
     height: 34px;
-    border: 1px solid rgba(255,34,68,0.4);
+    border: 1px solid rgba(255, 61, 113, 0.35);
     background: transparent;
-    color: #ff4466;
+    color: var(--red);
     font-family: 'Orbitron', monospace;
     font-size: 0.8rem;
     cursor: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.15s;
+    transition: background 0.15s, box-shadow 0.15s;
 }
 
 .logout-btn:hover {
-    background: rgba(255,34,68,0.1);
-    box-shadow: 0 0 12px rgba(255,34,68,0.4);
+    background: rgba(255, 61, 113, 0.08);
+    box-shadow: var(--glow-red);
 }
