@@ -88,4 +88,22 @@ public class PageController {
         System.out.println("Player ID: " + authentication.getName());
         return "game";
     }
+
+    /* TODO delete this */
+    @GetMapping("/test_game_page_functionality")
+    public String gamePage(
+            Authentication authentication,
+            Model model
+    ) {
+        if (!(authentication != null && authentication.isAuthenticated() && !(authentication instanceof AnonymousAuthenticationToken))) {
+            // user not authenticated
+            return "redirect:/login";
+        }
+
+        model.addAttribute("gameId", "game-1");
+        model.addAttribute("hostIp", "localhost");
+        model.addAttribute("hostPort", 49153);
+        model.addAttribute("playerId", authentication.getName());
+        return "game";
+    }
 }
