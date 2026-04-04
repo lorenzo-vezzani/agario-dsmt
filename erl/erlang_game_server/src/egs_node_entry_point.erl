@@ -51,15 +51,16 @@ start(_StartType, _StartArgs) ->
     %% Start a HTTP listener on port 49153.
     %% Cowboy will upgrade incoming HTTP requests to WebSocket
     %% automatically when the handler returns {cowboy_websocket, ...}
-    {ok, _} = cowboy:start_clear(
+    {ok, _} = cowboy:start_tls(
 
-        % name
         ?LIST,
 
-        % options (just port here)
-        [{port, ?WS_PORT}],
+        [
+            {port, ?WS_PORT},
+            {certfile, "priv/cert.pem"},
+            {keyfile, "priv/key.pem"}
+        ],
 
-        % Link this listener to the previous map
         #{env => #{dispatch => Websocket_dispatch}}
     ),
     print_cli("{start/2} WebSocket listeners started on port ~p", [?WS_PORT]),

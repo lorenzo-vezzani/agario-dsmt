@@ -36,7 +36,12 @@ loop() ->
 
     { From, get_lobbies_req, ReqId, Payload} ->
       io:format("Ricevuto: get_lobbies_req ~p~n", [Payload]),
-      From ! {self(), get_lobbies_resp, ReqId, {ok, [{"192.168.1.10", 100, "lobby1", 1}, {"192.168.1.11", 101, "lobby2", 2}, {"192.168.1.13", 103, "lobby3", 3}]}};
+      From ! {self(), get_lobbies_resp, ReqId, {ok, [
+        {"192.168.1.10", 100, "lobby1", 1},
+        {"192.168.1.11", 101, "lobby2", 2},
+        {"192.168.1.13", 103, "lobby3", 3},
+        {"192.168.1.65", 49153, "game", 1}
+      ]}};
 
     {send_stats} ->
       io:format("Sending stats...~n", []),

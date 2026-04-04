@@ -661,7 +661,7 @@ function connect(hostIp, hostPort, gameId, playerId) {
     $enterBtn.textContent = '... Entering';
     everConnected = false;
 
-    const url = `ws://${hostIp}:${hostPort}/ws/${encodeURIComponent(gameId)}/${encodeURIComponent(playerId)}`;
+    const url = `wss://${hostIp}:${hostPort}/ws/${encodeURIComponent(gameId)}/${encodeURIComponent(playerId)}`;
 
     try {
         ws = new WebSocket(url);
