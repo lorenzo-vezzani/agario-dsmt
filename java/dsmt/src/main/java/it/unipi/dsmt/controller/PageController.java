@@ -29,12 +29,12 @@ public class PageController {
 
     @GetMapping("/home")
     public String home() {
-        return "test_agario";
+        return "home";
     }
 
     @GetMapping("/")
-    public String game_zoom() {
-        return "test_zoom";
+    public String root() {
+        return "home";
     }
 
     @GetMapping("/signup")
