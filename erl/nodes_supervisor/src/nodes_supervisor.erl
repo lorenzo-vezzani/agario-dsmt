@@ -95,7 +95,7 @@ handle_call(start_game, _From, State) ->
 
             %% Start the game on the selected node via RPC
             case rpc:call(TargetNode, egs_supervisor, start_game, [GameId]) of
-                ok ->
+                {ok, Pid} ->
                     %% Update internal state
                     NewGameProc = maps:put(GameId, TargetNode, State#state.game_proc),
                     NewNodeLoad = maps:update_with(TargetNode, fun(N) -> N + 1 end, 1,
@@ -103,8 +103,8 @@ handle_call(start_game, _From, State) ->
                     NewState = State#state{game_proc = NewGameProc,
                                         node_load = NewNodeLoad},
 
-                    print_cli("Game ~p successfully started on ~p", [GameId, TargetNode]),
-                    {reply, {ok, GameId, TargetNode}, NewState};
+                    print_cli("Game ~s successfully started on ~p", [binary:encode_hex(GameId), TargetNode]),
+                    {reply, {ok, GameId, TargetNode, Pid}, NewState};
                 {badrpc, Reason} ->
                     print_cli("rpc:call failed on node ~p: ~p", [TargetNode, Reason]),
                     {reply, {error, {node_unavailable, Reason}}, State}
@@ -118,7 +118,7 @@ handle_call({stop_game, GameId}, _From, State) ->
     case maps:find(GameId, State#state.game_proc) of
 
         error ->
-            print_cli("{stop_game} game ~p not found", [GameId]),
+            print_cli("{stop_game} game ~s not found", [binary:encode_hex(GameId)]),
             {reply, {error, not_found}, State};
 
         {ok, TargetNode} ->
@@ -132,7 +132,7 @@ handle_call({stop_game, GameId}, _From, State) ->
             NewState = State#state{game_proc = NewGameProc,
                                    node_load = NewNodeLoad},
 
-            print_cli("Game ~p stopped, tables updated", [GameId]),
+            print_cli("Game ~s stopped, tables updated", [binary:encode_hex(GameId)]),
             {reply, ok, NewState}
     end;
 
@@ -142,7 +142,7 @@ handle_call({game_terminated, GameId, Stats}, _From, State) ->
     case maps:find(GameId, State#state.game_proc) of
 
         error ->
-            print_cli("{game_temrinated} game ~p not found", [GameId]),
+            print_cli("{game_temrinated} game ~s not found", [binary:encode_hex(GameId)]),
             {reply, {error, not_found}, State};
 
         {ok, TargetNode} ->
@@ -156,7 +156,7 @@ handle_call({game_terminated, GameId, Stats}, _From, State) ->
             %% sending stats to java node
             {springboot_mbox, ?JAVA_NODE} ! {self(), stats_req, GameId, {Stats}},
 
-            print_cli("Game ~p stopped, tables updated \nStats: ~p", [GameId, Stats]),
+            print_cli("Game ~s stopped, tables updated \nStats: ~p", [binary:encode_hex(GameId), Stats]),
 
             {reply, ok, NewState}
     end;

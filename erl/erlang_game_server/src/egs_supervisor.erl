@@ -134,12 +134,12 @@ start_game(GameId) ->
     case lookup(GameId) of
 
         {error, not_found} ->
-            print_cli("{start_game/1} starting game id=~s", [GameId]),
+            print_cli("{start_game/1} starting game id=~s", [binary:encode_hex(GameId)]),
             supervisor:start_child(?MODULE, [GameId]);
 
         % game found, so conflict on GameId
         {ok, _} ->
-            print_cli("{start_game/1} game id=~s already exists", [GameId]),
+            print_cli("{start_game/1} game id=~s already exists", [binary:encode_hex(GameId)]),
             {error, already_exists}
     end.
 
@@ -148,7 +148,7 @@ start_game(GameId) ->
 %%% lookup pid in ETS, then asks the supervisor to terminate that child. 
 %%% The game process will run its terminate/2 callback, which unregisters it from ETS.
 stop_game(GameId, Stats) ->
-    print_cli("{stop_game/1} Request to stop game_id=~s", [GameId]),
+    print_cli("{stop_game/1} Request to stop game_id=~s", [binary:encode_hex(GameId)]),
 
     % perform TES lookup of GameId
     case lookup(GameId) of
@@ -168,7 +168,7 @@ stop_game(GameId, Stats) ->
             unregister_game(GameId),
 
             % return ok
-            print_cli("{stop_game/1} Game_id=~s stopped", [GameId]),
+            print_cli("{stop_game/1} Game_id=~s stopped", [binary:encode_hex(GameId)]),
             ok;
 
         % if not found, print to log and return error
