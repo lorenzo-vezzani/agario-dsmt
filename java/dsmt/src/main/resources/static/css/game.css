@@ -1,53 +1,58 @@
+/* game.css — depends on general.css for :root tokens */
 
+/* ── Game screen ────────────────────────────────────── */
 #game-screen {
     position: absolute; inset: 0;
     display: none;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
 }
 
 #game-screen.active { display: flex; }
 
+/* ── HUD ────────────────────────────────────────────── */
 .hud {
     display: flex;
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: 0 14px;
+    padding: 10px 14px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: rgba(8, 11, 16, 0.88);
 }
 
 .hud-info {
     font-size: 0.65rem;
     letter-spacing: 0.18em;
-    color: rgba(0,255,136,0.45);
+    color: rgba(0, 229, 255, 0.45);
     line-height: 1.8;
 }
-
-.hud-info b { color: var(--green); font-weight: normal; }
+.hud-info b { color: var(--accent); font-weight: normal; }
 
 .hud-players {
     font-size: 0.65rem;
     letter-spacing: 0.12em;
-    color: rgba(0,255,136,0.35);
+    color: rgba(0, 229, 255, 0.35);
 }
+.hud-players b { color: var(--accent); }
 
-.hud-players b { color: var(--green); }
-
-/* zoom indicator in HUD */
 #hud-zoom {
     font-size: 0.65rem;
     letter-spacing: 0.14em;
-    color: rgba(0,255,136,0.45);
+    color: rgba(0, 229, 255, 0.45);
 }
-#hud-zoom b { color: var(--green); }
+#hud-zoom b { color: var(--accent); }
+#hud-zoom-hint {
+    color: rgba(0, 229, 255, 0.28);
+    font-size: 0.58rem;
+}
 
+/* ── Quit button ────────────────────────────────────── */
 .quit-btn {
     padding: 7px 22px;
     background: transparent;
-    border: 1px solid rgba(255,34,68,0.4);
-    color: #ff4466;
+    border: 1px solid rgba(255, 61, 113, 0.35);
+    color: var(--red);
     font-family: 'Orbitron', monospace;
     font-size: 0.65rem;
     font-weight: 700;
@@ -56,44 +61,204 @@
     cursor: none;
     transition: background 0.15s, box-shadow 0.15s;
 }
-
 .quit-btn:hover {
-    background: rgba(255,34,68,0.1);
-    box-shadow: 0 0 16px var(--red-glow);
+    background: rgba(255, 61, 113, 0.08);
+    box-shadow: var(--glow-red);
 }
 
-/* Canvas fills the remaining space */
+/* ── Canvas ─────────────────────────────────────────── */
 #arena-canvas {
-    border: 1px solid rgba(0,255,136,0.18);
-    box-shadow:
-        0 0 0 1px rgba(0,255,136,0.05),
-        0 0 40px var(--green-glow),
-        0 0 100px rgba(0,255,136,0.06);
     display: block;
+    flex: 1;
+    width: 100%;
 }
 
+/* ── Logout form (absolute) ─────────────────────────── */
 .logout-form {
     position: absolute;
     top: 14px;
     right: 14px;
 }
-
 .logout-btn {
     width: 74px;
     height: 34px;
-    border: 1px solid rgba(255,34,68,0.4);
+    border: 1px solid rgba(255, 61, 113, 0.35);
     background: transparent;
-    color: #ff4466;
+    color: var(--red);
     font-family: 'Orbitron', monospace;
     font-size: 0.8rem;
     cursor: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.15s;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+.logout-btn:hover {
+    background: rgba(255, 61, 113, 0.08);
+    box-shadow: var(--glow-red);
 }
 
-.logout-btn:hover {
-    background: rgba(255,34,68,0.1);
-    box-shadow: 0 0 12px rgba(255,34,68,0.4);
+/* ═══════════════════════════════════════════════════════
+   PRE-GAME PANEL
+   ═══════════════════════════════════════════════════════ */
+
+.pre-logo {
+    font-family: 'Orbitron', monospace;
+    font-size: 2rem;
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    text-align: center;
+    color: var(--accent);
+    text-shadow: var(--glow);
+}
+
+.pre-subtitle {
+    text-align: center;
+    font-size: 0.58rem;
+    letter-spacing: 0.35em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-top: 3px;
+    margin-bottom: 28px;
+}
+
+/* Info chips — read-only session details */
+.info-chips {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 28px;
+}
+
+.info-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    background: rgba(0, 229, 255, 0.03);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.info-chip:hover {
+    background: rgba(0, 229, 255, 0.06);
+    border-color: rgba(0, 229, 255, 0.35);
+}
+
+.info-key {
+    font-size: 0.58rem;
+    letter-spacing: 0.28em;
+    color: rgba(0, 229, 255, 0.45);
+    text-transform: uppercase;
+    flex-shrink: 0;
+    width: 64px;
+}
+
+.info-val {
+    font-size: 0.9rem;
+    color: var(--text);
+    letter-spacing: 0.06em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════
+   DEATH PANEL
+   ═══════════════════════════════════════════════════════ */
+
+.death-panel {
+    animation: slideIn 0.3s ease;
+}
+
+.death-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.6rem;
+    font-weight: 900;
+    letter-spacing: 0.22em;
+    text-align: center;
+    color: var(--red);
+    text-shadow: var(--glow-red);
+    margin-bottom: 4px;
+}
+
+.death-sub {
+    text-align: center;
+    font-size: 0.58rem;
+    letter-spacing: 0.28em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+}
+
+/* Leaderboard container */
+.death-lb {
+    border: 1px solid var(--border);
+    background: rgba(0, 229, 255, 0.02);
+    margin-bottom: 20px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+/* Scrollbar */
+.death-lb::-webkit-scrollbar { width: 4px; }
+.death-lb::-webkit-scrollbar-track { background: transparent; }
+.death-lb::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Header row */
+.lb-header {
+    display: grid;
+    grid-template-columns: 28px 1fr 36px 36px;
+    gap: 0;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.58rem;
+    letter-spacing: 0.28em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    position: sticky; top: 0;
+    background: rgba(8, 11, 16, 0.98);
+}
+
+/* Data rows */
+.lb-row {
+    display: grid;
+    grid-template-columns: 28px 1fr 36px 36px;
+    gap: 0;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(30, 42, 58, 0.5);
+    font-size: 0.8rem;
+    transition: background 0.1s;
+}
+.lb-row:last-child { border-bottom: none; }
+.lb-row:hover { background: rgba(0, 229, 255, 0.04); }
+
+/* "You" row highlight */
+.lb-row.lb-me {
+    background: rgba(255, 61, 113, 0.08);
+    border-left: 2px solid var(--red);
+}
+.lb-row.lb-me:hover { background: rgba(255, 61, 113, 0.12); }
+
+.lb-rank { color: var(--text-muted); }
+.lb-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-k    { color: var(--accent); text-align: right; }
+.lb-d    { color: var(--red);    text-align: right; }
+
+.lb-row.lb-me .lb-name { color: var(--red); }
+.lb-row.lb-me .lb-rank { color: var(--red); }
+
+/* Rejoin button — variant of connect-btn with red accent */
+.rejoin-btn {
+    border-color: rgba(255, 61, 113, 0.45) !important;
+    color: var(--red) !important;
+}
+.rejoin-btn::before {
+    background: linear-gradient(90deg, transparent, rgba(255, 61, 113, 0.07), transparent) !important;
+}
+.rejoin-btn:hover {
+    background: rgba(255, 61, 113, 0.08) !important;
+    border-color: var(--red) !important;
+    box-shadow: var(--glow-red) !important;
 }

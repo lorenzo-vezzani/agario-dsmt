@@ -17,7 +17,7 @@
 -behaviour(gen_server).
 
 -export([start_link/1]).
--export([join/2, leave/2, player_msg/3]).
+-export([join/2, leave/2, player_input/3, player_rejoin/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 
@@ -201,7 +201,7 @@ handle_cast({join, WsPid, PlayerId}, State) ->
     Clients = maps:put(PlayerId, ClientState, maps:get(?STATE_CLIENTS, State)),
     Balls = maps:put(PlayerId, NewBall, maps:get(?STATE_BALL, State)),
 
-    % put a new entry in map ONLY if there's not already one (there may be if player is rejoining)
+    % put a new entry in map ONLY if there's not already one (there may be if player is rejoining after closing the socket)
     Stats = case maps:is_key(PlayerId, maps:get(?STATE_STATS, State)) of
 
         % key not found, so insert initial stats
@@ -232,9 +232,40 @@ handle_cast({join, WsPid, PlayerId}, State) ->
         }
     };
 
+
+%%% Handles a player re-joining the game after being killed.
+%%% Chekcs that the socket and stats already exists AND
+%%% that the ball doesn't exists
+%%% - Initilizes a new ball for the player
+handle_cast({rejoin, WsPid, PlayerId}, State) ->
+
+    StatePresent = maps:is_key(PlayerId, maps:get(?STATE_STATS, State)),
+    ClientPresent = maps:is_key(PlayerId, maps:get(?STATE_CLIENTS, State)),
+    BallPresent = maps:is_key(PlayerId, maps:get(?STATE_BALL, State)),
+
+    NewState = case {ClientPresent, StatePresent, BallPresent} of
+
+        % rejoin case if only the ball is missing (has been killed)
+        {true, true, false} ->
+
+            NewBall = egs_game_module_utils:gl__spawn_random_ball(),
+            NewBalls = maps:put(PlayerId, NewBall, maps:get(?STATE_BALL, State)),
+
+            print_cli("{handle_cast rejoin} player=~s rejoined with new ball", [PlayerId]),
+
+            State#{?STATE_BALL => NewBalls};
+
+        % not true rejoin -> keep the state unaltered
+        _ ->
+            print_cli("{handle_cast rejoin} player=~s invalid rejoin", [PlayerId]),
+            State
+    end,
+
+    {noreply, NewState};
+
 %%% Parses and applies a raw message from the browser.
 %%% All game-specific interpretation lives here, not in the WS handler.
-handle_cast({player_msg, PlayerId, Msg}, State) ->
+handle_cast({player_input, PlayerId, Msg}, State) ->
 
     % uncomment for full debug, every 20ms
     % print_cli("{handle_cast MSG} msg=~s", [Msg]),
@@ -295,16 +326,28 @@ handle_cast({leave, PlayerId}, State) ->
 %%% Send a raw browser message to the game process
 %%% Parsing of message is inside handle_cast, this is 
 %%% just a wrapper to avoid sending to non-existing pid
-player_msg(GameId, PlayerId, Msg) ->
+player_input(GameId, PlayerId, Msg) ->
 
     % lookup pid of the game process
     case egs_supervisor:lookup(GameId) of
 
         % if found, send the raw message to the game process
-        {ok, Pid} -> gen_server:cast(Pid, {player_msg, PlayerId, Msg});
+        {ok, Pid} -> gen_server:cast(Pid, {player_input, PlayerId, Msg});
 
         % not found
-        Err       -> Err
+        Err -> Err
+    end.
+
+player_rejoin(GameId, PlayerId) ->
+
+    % lookup pid of the game process
+    case egs_supervisor:lookup(GameId) of
+
+        % if found, send the raw message to the game process
+        {ok, Pid} -> gen_server:cast(Pid, {rejoin, self(), PlayerId});
+
+        % not found
+        Err -> Err
     end.
 
 
