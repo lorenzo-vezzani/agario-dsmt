@@ -261,3 +261,17 @@ body::before {
     color: var(--accent);
     text-shadow: 0 0 10px var(--accent-glow);
 }
+
+/* ── back link ── */
+.back-link {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 40px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: .75rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    transition: color .2s;
+}
+.back-link:hover { color: var(--accent); }
+.back-link::before { content: '←'; }
