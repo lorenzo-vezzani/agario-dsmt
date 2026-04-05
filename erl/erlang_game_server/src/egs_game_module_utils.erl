@@ -365,6 +365,10 @@ decode__direction_update(Msg) ->
 %%%         "food":[
 %%%             {"id":<food id>,"x":<x val>,"y":<y val>},
 %%%             ...
+%%%         ],
+%%%         "stats":[
+%%%             {"id":<player id>,"k":<kill count>,"d":<death count>},
+%%%             ...
 %%%         ]
 %%%     }
 encode__state(Balls, Food, Stats) ->
@@ -503,12 +507,12 @@ encode__food(FoodId, FoodInfo) ->
 %%% Used in the general encode__state
 %%% 
 %%% Output format: 
-%%%     {"id":<player id>,"kills":<kill count>,"deaths":<death count>}
+%%%     {"id":<player id>,"k":<kill count>,"d":<death count>}
 %%% 
 %%% Output example: 
-%%%     {"id":123,"kills":10,"deaths":2}
+%%%     {"id":123,"k":10,"d":2}
 encode__stats(PlayerId, PlayerStats) ->
-    io_lib:format("{\"id\":\"~s\",\"kills\":~p,\"deaths\":~p}", [
+    io_lib:format("{\"id\":\"~s\",\"k\":~p,\"d\":~p}", [
         PlayerId,
         maps:get(kills, PlayerStats),
         maps:get(deaths, PlayerStats)
