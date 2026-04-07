@@ -40,8 +40,11 @@ print_cli(Text, Args) -> egs_utils:print_cli("WebSocket", Text, Args).
 init(Req, _Opts) ->
     
     % extract game_id and player_id from request
-    GameId   = cowboy_req:binding(game_id,   Req),
+    GameIdHex = cowboy_req:binding(game_id, Req),
     PlayerId = cowboy_req:binding(player_id, Req),
+
+    GameId = binary:decode_hex(GameIdHex),
+
     print_cli("{init/2} game=~s player=~s", [GameId, PlayerId]),
 
     % Construct state object
@@ -84,13 +87,20 @@ websocket_init(State) ->
 %%% Handler for incoming messages from client broswer,
 %%%
 %%% Returns {ok, State} to keep the connection open without sending a reply.
+websocket_handle({text, <<"rejoin">>}, State) ->
+    egs_game_module:player_rejoin(
+        maps:get(game_id, State),
+        maps:get(player_id, State)
+    ),
+    {ok, State};
+
 websocket_handle({text, Msg}, State) ->
 
     % uncomment for full debug, NOTE: a print every 20ms
     % print_cli("{websocket_handle/2} received: ~p", [Msg]),
 
     % inoltrate whatever messgae is sent to the game process
-    egs_game_module:player_msg(
+    egs_game_module:player_input(
         maps:get(game_id, State),
         maps:get(player_id, State),
         Msg

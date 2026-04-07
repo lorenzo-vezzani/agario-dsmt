@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EGS — Erlang Game Server</title>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <title>BallZ — Game</title>
     <link th:href="@{/css/general.css}" type="text/css" rel="stylesheet"/>
-    <link th:href="@{/css/game_zoom.css}" type="text/css" rel="stylesheet"/>
+    <link th:href="@{/css/game.css}" type="text/css" rel="stylesheet"/>
 
     <script th:inline="javascript">
         const INIT_HOST_IP = [[${hostIp}]];
@@ -24,30 +23,68 @@
 <!-- ═══ LOGIN SCREEN ════════════════════════════════════ -->
 <div id="login-screen" class="main-box">
     <div class="panel">
-        <div class="field">
-            <label class="field-label">
-                <span class="marker">▸</span>
-                <span id="host-address">host:ip</span>
-            </label>
-        </div>
-        <div class="field">
-            <label class="field-label">
-                <span class="marker">▸</span>
-                <span id="game-id">game Id</span>
-            </label>
+
+        <!-- ── Normal pre-game content ── -->
+        <div id="pre-panel">
+            <div class="pre-logo">BallZ</div>
+            <div class="pre-subtitle">Game Session</div>
+
+            <div class="info-chips">
+                <div class="info-chip">
+                    <span class="info-key">▸ Host</span>
+                    <span class="info-val" th:text="${hostIp} + ':' + ${hostPort}">—</span>
+                </div>
+                <div class="info-chip">
+                    <span class="info-key">▸ Game</span>
+                    <span class="info-val" th:text="${gameId}">—</span>
+                </div>
+                <div class="info-chip">
+                    <span class="info-key">▸ Player</span>
+                    <span class="info-val" th:text="${playerId}">—</span>
+                </div>
+            </div>
+
+            <button class="connect-btn" id="enter-btn">▶ Enter</button>
+
+            <div class="page-link">
+                <a th:href="@{/lobby}">← Back to lobby</a>
+            </div>
+
+            <div class="page-link">
+                <a th:href="@{/statistics}">Check your stats</a>
+            </div>
+
+            <div class="error-box" id="error-box"></div>
         </div>
 
-        <button class="connect-btn" id="enter-btn">▶ Enter</button>
-        <button class="connect-btn" id="join-back-btn">▶ Join back</button>
+        <!-- death panel -->
+        <div id="death-panel" class="death-panel" style="display:none">
+            <div class="death-title">YOU DIED</div>
+            <div class="death-sub">Socket open · watching live</div>
 
-        <div class="page-link">
-            <a th:href="@{/lobby}">Back to lobby</a>
-        </div>
-        <div class="page-link">
-            <a th:href="@{/statistics}">Check your stats</a>
+            <div id="death-leaderboard" class="death-lb">
+                <!-- populated via JS dynamically -->
+            </div>
+
+            <button class="connect-btn rejoin-btn" id="rejoin-btn">↺ Rejoin</button>
+
+            <div class="page-link" style="margin-top: 12px">
+                <a th:href="@{/lobby}">← Back to lobby</a>
+            </div>
         </div>
 
-        <div class="error-box" id="error-box"></div>
+        <!-- Gameover -->
+        <div id="gameover-panel" style="display:none">
+            <div class="death-title" style="color:var(--accent);text-shadow:var(--glow)">GAME OVER</div>
+            <div class="death-sub">Classifica finale</div>
+
+            <div id="gameover-leaderboard" class="death-lb"></div>
+
+            <a class="connect-btn" th:href="@{/lobby}"
+            style="display:block;text-align:center;text-decoration:none;margin-top:12px">
+                ← Back to lobby
+            </a>
+        </div>
 
         <form th:action="@{/logout}" method="post" class="logout-form">
             <button type="submit" class="logout-btn">✕ Logout</button>
@@ -61,12 +98,16 @@
         <div class="hud-info">
             GAME <b id="hud-game">—</b> &nbsp;·&nbsp; PLAYER <b id="hud-player">—</b>
         </div>
-        <div id="hud-zoom">ZOOM <b id="hud-zoom-val">1.0×</b> &nbsp;<span style="color:rgba(0,255,136,0.3);font-size:0.58rem">Q- P+</span></div>
+        <div id="hud-zoom">
+            ZOOM <b id="hud-zoom-val">1.0x</b>
+            &nbsp;<span id="hud-zoom-hint">Q- P+</span>
+        </div>
         <div class="hud-players">PLAYERS: <b id="hud-count">0</b></div>
         <button class="quit-btn" id="quit-btn">✕ Quit</button>
     </div>
     <canvas id="arena-canvas"></canvas>
 </div>
+
 <script th:src="@{js/game.js}"></script>
 </body>
 </html>

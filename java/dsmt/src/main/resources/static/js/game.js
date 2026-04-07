@@ -5,7 +5,7 @@
 // ──────────────────────────────────────────────────────────
 const ARENA_W = 2000;
 const ARENA_H = 2000;
-const GRID_CELL = 100;   // arena-space grid cell size (pixels in arena units)
+const GRID_CELL = 100;
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN  = 0.3;
 const ZOOM_MAX  = 4.0;
@@ -23,13 +23,13 @@ let everConnected = false;
 let sendTimer     = null;
 let rafId         = null;
 let final_stats   = null;
+let isDead        = false;
+let isGameOver    = false;
+let playerWasAlive = false; // true if client is in latestBalls
+let zoom          = 1.0;
 
-// Camera state
-let zoom          = 1.0;   // current zoom level (1 = default)
-
-// Trail: arena-space position history per ball id
-const TRAIL_LEN   = 28;    // number of stored positions
-const trailMap    = new Map(); // id → [{x,y}, ...]
+const TRAIL_LEN   = 28;
+const trailMap    = new Map();
 
 // ──────────────────────────────────────────────────────────
 // DOM REFS
@@ -46,6 +46,12 @@ const $hudGame      = document.getElementById('hud-game');
 const $hudPlayer    = document.getElementById('hud-player');
 const $hudCount     = document.getElementById('hud-count');
 const $hudZoomVal   = document.getElementById('hud-zoom-val');
+const $prePanel     = document.getElementById('pre-panel');
+const $deathPanel   = document.getElementById('death-panel');
+const $deathLb      = document.getElementById('death-leaderboard');
+const $rejoinBtn    = document.getElementById('rejoin-btn');
+const $gameoverPanel = document.getElementById('gameover-panel');
+const $gameoverLb = document.getElementById('gameover-leaderboard');
 
 // ──────────────────────────────────────────────────────────
 // MOUSE TRACKING
@@ -162,7 +168,7 @@ function renderFrame() {
     const cam = getCameraCenter();
 
     // ── Background
-    ctx.fillStyle = '#020d04';
+    ctx.fillStyle = '#080b10';
     ctx.fillRect(0, 0, W, H);
 
     // ── Moving grid (parallax with the arena)
@@ -178,7 +184,7 @@ function renderFrame() {
         const startIX = Math.floor(-originX / gs);
         const startIY = Math.floor(-originY / gs);
 
-        ctx.strokeStyle = 'rgba(0,255,136,0.07)';
+        ctx.strokeStyle = 'rgba(0,229,255,0.06)';
         ctx.lineWidth = 1;
         ctx.beginPath();
 
@@ -201,12 +207,12 @@ function renderFrame() {
     {
         const [bx0, by0] = a2c(0,       0,       cam);
         const [bx1, by1] = a2c(ARENA_W, ARENA_H, cam);
-        ctx.strokeStyle = 'rgba(0,255,136,0.35)';
+        ctx.strokeStyle = 'rgba(0,229,255,0.30)';
         ctx.lineWidth = 2;
         ctx.strokeRect(bx0, by0, bx1 - bx0, by1 - by0);
 
         // subtle inner fill to distinguish "outside" from "inside"
-        ctx.fillStyle = 'rgba(0,255,136,0.015)';
+        ctx.fillStyle = 'rgba(0,229,255,0.012)';
         ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
     }
 
@@ -220,7 +226,7 @@ function renderFrame() {
         ctx.beginPath();
         ctx.moveTo(bx, by);
         ctx.lineTo(mx, my);
-        ctx.strokeStyle = 'rgba(255,34,68,0.18)';
+        ctx.strokeStyle = 'rgba(255,61,113,0.18)';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 7]);
         ctx.stroke();
@@ -237,14 +243,14 @@ function renderFrame() {
 
         // Glow
         const fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr * 3);
-        fg.addColorStop(0, 'rgba(0,255,136,0.35)');
+        fg.addColorStop(0, 'rgba(0,229,255,0.32)');
         fg.addColorStop(1, 'transparent');
         ctx.beginPath(); ctx.arc(fx, fy, fr * 3, 0, Math.PI * 2);
         ctx.fillStyle = fg; ctx.fill();
 
         // Dot
         ctx.beginPath(); ctx.arc(fx, fy, Math.max(1.5, fr), 0, Math.PI * 2);
-        ctx.fillStyle = (dot.r < 0) ? '#ff0088' : '#00ff88';
+        ctx.fillStyle = (dot.r < 0) ? '#ff0088' : '#00e5ff';
         ctx.fill();
     }
 
@@ -281,7 +287,7 @@ function renderFrame() {
             const hue    = idToHue(ball.id);
             const trailR = (ball.r || 20) * zoom;
             for (let i = 1; i < hist.length; i++) {
-                const t   = i / hist.length;           // 0 (oldest) → 1 (newest)
+                const t   = i / hist.length;
                 const [x0, y0] = a2c(hist[i-1].x, hist[i-1].y, cam);
                 const [x1, y1] = a2c(hist[i].x,   hist[i].y,   cam);
                 const alpha = t * (isMe ? 0.55 : 0.28);
@@ -300,14 +306,17 @@ function renderFrame() {
         const grd = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 2.2);
         grd.addColorStop(0, col.glow);
         grd.addColorStop(1, 'transparent');
-        ctx.beginPath(); ctx.arc(cx, cy, r * 2.2, 0, Math.PI * 2);
-        ctx.fillStyle = grd; ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = grd;
+        ctx.fill();
 
         // ── Body gradient
         const bg = ctx.createRadialGradient(cx - r*0.3, cy - r*0.35, r*0.05, cx, cy, r);
         bg.addColorStop(0, col.fill);
         bg.addColorStop(1, col.fill2);
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.beginPath(); 
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.fillStyle = bg;
         ctx.fill();
 
@@ -317,7 +326,8 @@ function renderFrame() {
             const rim = ctx.createRadialGradient(cx, cy, r * 0.72, cx, cy, r);
             rim.addColorStop(0, 'transparent');
             rim.addColorStop(1, col.ring);
-            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.beginPath(); 
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
             ctx.fillStyle = rim;
             ctx.fill();
         }
@@ -351,13 +361,13 @@ function renderFrame() {
         const my = mouseY - r.top;
         if (mx >= 0 && mx <= W && my >= 0 && my <= H) {
             const mg = ctx.createRadialGradient(mx, my, 0, mx, my, 18);
-            mg.addColorStop(0, 'rgba(255,34,68,0.3)');
+            mg.addColorStop(0, 'rgba(255,61,113,0.3)');
             mg.addColorStop(1, 'transparent');
             ctx.beginPath(); ctx.arc(mx, my, 18, 0, Math.PI * 2);
             ctx.fillStyle = mg; ctx.fill();
 
             ctx.beginPath(); ctx.arc(mx, my, 6, 0, Math.PI * 2);
-            ctx.fillStyle = '#ff2244'; ctx.fill();
+            ctx.fillStyle = '#ff3d71'; ctx.fill();
         }
     }
 
@@ -370,16 +380,16 @@ function renderFrame() {
         const MM_SCALE  = MM_SIZE / Math.max(ARENA_W, ARENA_H);
 
         // Background
-        ctx.fillStyle = 'rgba(2,13,4,0.82)';
+        ctx.fillStyle = 'rgba(8,11,16,0.88)';
         ctx.fillRect(MM_X, MM_Y, MM_SIZE, MM_SIZE);
 
         // Border
-        ctx.strokeStyle = 'rgba(0,255,136,0.25)';
+        ctx.strokeStyle = 'rgba(0,229,255,0.22)';
         ctx.lineWidth = 1;
         ctx.strokeRect(MM_X + 0.5, MM_Y + 0.5, MM_SIZE - 1, MM_SIZE - 1);
 
         // Light grid overlay (4×4)
-        ctx.strokeStyle = 'rgba(0,255,136,0.07)';
+        ctx.strokeStyle = 'rgba(0,229,255,0.06)';
         ctx.lineWidth = 0.5;
         for (let i = 1; i < 4; i++) {
             const ox = MM_X + (MM_SIZE / 4) * i;
@@ -424,7 +434,7 @@ function renderFrame() {
         ctx.font = '8px "Share Tech Mono", monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = 'rgba(0,255,136,0.28)';
+        ctx.fillStyle = 'rgba(0,229,255,0.25)';
         ctx.fillText('RADAR', MM_X + 4, MM_Y + 4);
     }
 
@@ -473,9 +483,9 @@ function drawBallsLeaderboard(W, H) {
     const panelH = TITLE_H + PAD + rows.length * LH + PAD;
 
     // Background
-    ctx.fillStyle = 'rgba(2,13,4,0.82)';
+    ctx.fillStyle = 'rgba(8,11,16,0.88)';
     ctx.fillRect(PX, PY, PW, panelH);
-    ctx.strokeStyle = 'rgba(0,255,136,0.22)';
+    ctx.strokeStyle = 'rgba(0,229,255,0.18)';
     ctx.lineWidth = 1;
     ctx.strokeRect(PX + 0.5, PY + 0.5, PW - 1, panelH - 1);
 
@@ -516,14 +526,14 @@ function drawBallsLeaderboard(W, H) {
 
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = isMe ? `hsl(${hue},100%,75%)` : 'rgba(0,255,136,0.72)';
+        ctx.fillStyle = isMe ? `hsl(${hue},100%,75%)` : 'rgba(0,229,255,0.68)';
         ctx.fillText(`${i + 1}. ${label}`, PX + PAD + 4, rowY + LH / 2);
 
         ctx.textAlign = 'right';
-        ctx.fillStyle = isMe ? `hsl(${hue},80%,70%)` : 'rgba(0,255,136,0.50)';
-        ctx.fillText(rad,            PX + PW - PAD - 70, rowY + LH / 2);
-        ctx.fillText(bx,             PX + PW - PAD - 32, rowY + LH / 2);
-        ctx.fillText(by,             PX + PW - PAD,      rowY + LH / 2);
+        ctx.fillStyle = isMe ? `hsl(${hue},80%,70%)` : 'rgba(0,229,255,0.45)';
+        ctx.fillText(rad, PX + PW - PAD - 70, rowY + LH / 2);
+        ctx.fillText(bx, PX + PW - PAD - 32, rowY + LH / 2);
+        ctx.fillText(by, PX + PW - PAD, rowY + LH / 2);
 
         rowY += LH;
     });
@@ -554,22 +564,22 @@ function drawStatsLeaderboard(W, H) {
     const panelH = TITLE_H + PAD + rows.length * LH + PAD;
 
     // Background
-    ctx.fillStyle = 'rgba(2,13,4,0.82)';
+    ctx.fillStyle = 'rgba(8,11,16,0.88)';
     ctx.fillRect(PX, PY, PW, panelH);
-    ctx.strokeStyle = 'rgba(0,255,136,0.22)';
+    ctx.strokeStyle = 'rgba(0,229,255,0.18)';
     ctx.lineWidth = 1;
     ctx.strokeRect(PX + 0.5, PY + 0.5, PW - 1, panelH - 1);
 
     // Column headers
     ctx.font = FONT_TITLE;
     ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(0,255,136,0.20)';
+    ctx.fillStyle = 'rgba(0,229,255,0.20)';
     ctx.textAlign = 'left';
     ctx.fillText('PLAYER', PX + PAD, PY + 5);
     ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(0,220,80,0.30)';
+    ctx.fillStyle = 'rgba(0,229,255,0.28)';
     ctx.fillText('K', PX + PW - PAD - 26, PY + 5);
-    ctx.fillStyle = 'rgba(255,34,68,0.30)';
+    ctx.fillStyle = 'rgba(255,61,113,0.28)';
     ctx.fillText('D', PX + PW - PAD, PY + 5);
 
     let rowY = PY + TITLE_H;
@@ -590,20 +600,50 @@ function drawStatsLeaderboard(W, H) {
 
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = isMe ? `hsl(${hue},100%,75%)` : 'rgba(0,255,136,0.72)';
+        ctx.fillStyle = isMe ? `hsl(${hue},100%,75%)` : 'rgba(0,229,255,0.68)';
         ctx.fillText(`${i + 1}. ${label}`, PX + PAD + 4, rowY + LH / 2);
 
         // kills — green tint
         ctx.textAlign = 'right';
-        ctx.fillStyle = isMe ? '#77ffaa' : 'rgba(0,220,80,0.70)';
+        ctx.fillStyle = isMe ? '#77eeee' : 'rgba(0,229,255,0.65)';
         ctx.fillText(stat.k, PX + PW - PAD - 26, rowY + LH / 2);
 
         // deaths — red tint
-        ctx.fillStyle = isMe ? '#ff6680' : 'rgba(255,80,100,0.55)';
+        ctx.fillStyle = isMe ? '#ff6680' : 'rgba(255,61,113,0.55)';
         ctx.fillText(stat.d, PX + PW - PAD, rowY + LH / 2);
 
         rowY += LH;
     });
+}
+
+// ──────────────────────────────────────────────────────────
+// DEATH PANEL — HTML leaderboard (live while spectating)
+// ──────────────────────────────────────────────────────────
+function renderDeathLeaderboard() {
+    if (!$deathLb || !latestStats.length) return;
+
+    const sorted = [...latestStats].sort((a, b) => b.k - a.k || a.d - b.d);
+
+    const header = `
+        <div class="lb-header">
+            <span class="lb-rank">#</span>
+            <span class="lb-name">Player</span>
+            <span class="lb-k">K</span>
+            <span class="lb-d">D</span>
+        </div>`;
+
+    const rows = sorted.map((s, i) => {
+        const isMe = s.id === INIT_PLAYER_ID;
+        const name = s.id.length > 14 ? s.id.slice(0, 13) + '…' : s.id;
+        return `<div class="lb-row${isMe ? ' lb-me' : ''}">
+            <span class="lb-rank">${i + 1}</span>
+            <span class="lb-name">${name}</span>
+            <span class="lb-k">${s.k}</span>
+            <span class="lb-d">${s.d}</span>
+        </div>`;
+    }).join('');
+
+    $deathLb.innerHTML = header + rows;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -618,6 +658,8 @@ function showError(msg) {
 
 function enterGame() {
     everConnected = true;
+    isDead        = false;
+    playerWasAlive = false;
     $hudGame.textContent   = INIT_GAME_ID;
     $hudPlayer.textContent = INIT_PLAYER_ID;
     $errorBox.classList.remove('visible');
@@ -634,16 +676,110 @@ function leaveGame(errMsg) {
     cancelAnimationFrame(rafId);
     clearInterval(sendTimer);
     everConnected = false;
-    latestBalls   = [];
-    latestFood    = [];
-    latestStats   = [];
+    isDead = false;
+    playerWasAlive = false;
+    isGameOver = false;
+    latestBalls = [];
+    latestFood = [];
+    latestStats = [];
     trailMap.clear();
     $gameScreen.classList.remove('active');
     $loginScreen.style.display = 'flex';
+    $deathPanel.style.display = 'none';
+    $prePanel.style.display   = 'block';
     $enterBtn.disabled = false;
     $enterBtn.textContent = '▶ Enter';
     if (errMsg) showError(errMsg);
     else $errorBox.classList.remove('visible');
+}
+
+// ──────────────────────────────────────────────────────────
+// DEATH DETECTION & DEATH PANEL
+// ──────────────────────────────────────────────────────────
+
+/**
+ * Called once when the server state no longer contains the player's ball,
+ * after the player was known to be alive. The WS stays open.
+ */
+function onPlayerKilled() {
+    isDead         = true;
+    playerWasAlive = false;
+
+    // Stop rendering & sending direction
+    cancelAnimationFrame(rafId);
+    rafId = null;
+    clearInterval(sendTimer);
+    sendTimer = null;
+
+    // Switch back to the pre-game screen, but show death panel
+    $gameScreen.classList.remove('active');
+    $loginScreen.style.display = 'flex';
+    $prePanel.style.display    = 'none';
+    $deathPanel.style.display  = 'block';
+
+    renderDeathLeaderboard();
+}
+
+function rejoin() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    isDead = false;
+    playerWasAlive = false;
+
+    $deathPanel.style.display  = 'none';
+    $loginScreen.style.display = 'none';
+    $gameScreen.classList.add('active');
+
+    // Signal rejoin
+    ws.send("rejoin");
+
+    resizeCanvas();
+    rafId = requestAnimationFrame(renderFrame);
+    sendTimer = setInterval(sendDir, 20);
+}
+
+$rejoinBtn.addEventListener('click', rejoin);
+
+function onGameOver(data) {
+    isGameOver     = true;
+    isDead         = false;
+    playerWasAlive = false;
+
+    cancelAnimationFrame(rafId); rafId = null;
+    clearInterval(sendTimer);    sendTimer = null;
+
+    $gameScreen.classList.remove('active');
+    $loginScreen.style.display = 'flex';
+    $prePanel.style.display    = 'none';
+    $deathPanel.style.display  = 'none';
+    $gameoverPanel.style.display = 'block';
+
+    // ── ordered_balls leaderboard (posizione finale)
+    const balls = Array.isArray(data.ordered_balls) ? data.ordered_balls : [];
+    const stats = Array.isArray(data.stats)         ? data.stats         : [];
+
+    // Mappa id → K/D per join veloce
+    const statsMap = new Map(stats.map(s => [s.id, s]));
+
+    const ballRows = balls.map((b, i) => {
+        const isMe = b.id === INIT_PLAYER_ID;
+        const s    = statsMap.get(b.id) || { k: '—', d: '—' };
+        const name = b.id.length > 14 ? b.id.slice(0, 13) + '…' : b.id;
+        return `<div class="lb-row${isMe ? ' lb-me' : ''}">
+            <span class="lb-rank">${i + 1}</span>
+            <span class="lb-name">${name}</span>
+            <span class="lb-k">${s.k}</span>
+            <span class="lb-d">${s.d}</span>
+        </div>`;
+    }).join('');
+
+    $gameoverLb.innerHTML = `
+        <div class="lb-header">
+            <span class="lb-rank">#</span>
+            <span class="lb-name">Player</span>
+            <span class="lb-k">K</span>
+            <span class="lb-d">D</span>
+        </div>` + ballRows;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -681,16 +817,28 @@ function connect(hostIp, hostPort, gameId, playerId) {
                 if (Array.isArray(data.balls)) latestBalls = data.balls;
                 if (Array.isArray(data.food))  latestFood  = data.food;
                 if (Array.isArray(data.stats)) latestStats = data.stats;
-                if (Array.isArray(data.stats)) console.warn(data.stats);
+
+                // ── Death detection (only while actively in game)
+                if (everConnected && !isDead) {
+                    const meAlive = latestBalls.some(b => b.id === INIT_PLAYER_ID);
+                    if (meAlive) {
+                        playerWasAlive = true;
+                    } else if (playerWasAlive) {
+                        onPlayerKilled();
+                    }
+                }
+
+                // Update live leaderboard while spectating after death
+                if (isDead) renderDeathLeaderboard();
                 break;
 
             case "gameover":
                 final_stats = data;
-                console.warn(data.ordered_balls);
-                console.warn(data.stats);
+                onGameOver(data);
                 break;
 
-            default: console.warn("unknown type\n");
+            default: 
+                console.warn("unknown message type", data.type);
         }
 
         if (!everConnected) enterGame();
@@ -705,7 +853,7 @@ function connect(hostIp, hostPort, gameId, playerId) {
             } else {
                 showError(`ERROR: Connection refused [code ${e.code}]`);
             }
-        } else {
+        } else if (!isDead && !isGameOver) {
             leaveGame(`DISCONNECTED: code ${e.code}`);
         }
     };
