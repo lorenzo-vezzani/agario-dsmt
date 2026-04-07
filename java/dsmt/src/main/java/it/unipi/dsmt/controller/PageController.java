@@ -2,6 +2,10 @@ package it.unipi.dsmt.controller;
 
 import it.unipi.dsmt.dto.UserStatsDTO;
 import it.unipi.dsmt.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -71,6 +75,7 @@ public class PageController {
     @GetMapping("/game")
     public String gamePage(
             Authentication authentication,
+            HttpServletRequest request,
             @RequestParam String gameId,
             @RequestParam String hostIp,
             @RequestParam Integer hostPort,
@@ -81,10 +86,18 @@ public class PageController {
             return "redirect:/login";
         }
 
+        HttpSession session = request.getSession(false);
+        if (session == null) {
+            // client not authenticated (but the request should be filtered before)
+            return "redirect:/login";
+        }
+        String sessionId = session.getId();
+
         model.addAttribute("gameId", gameId);
         model.addAttribute("hostIp", hostIp);
         model.addAttribute("hostPort", hostPort);
         model.addAttribute("playerId", authentication.getName());
+        model.addAttribute("gameToken", sessionId);
         System.out.println("Player ID: " + authentication.getName());
         return "game";
     }
