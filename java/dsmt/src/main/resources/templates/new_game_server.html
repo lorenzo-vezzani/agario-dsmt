@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="it" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EGS — Erlang Game Server</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <link th:href="@{/css/general.css}" type="text/css" rel="stylesheet"/>
+</head>
+<body onload="createGameServer()">
+
+<div id="mouse-dot"></div>
+<script th:src="@{/js/custom_pointer.js}" type="text/javascript"></script>
+<script th:src="@{/js/new_game_server.js}" type="text/javascript"></script>
+
+<div id="login-screen" class="main-box">
+    <div class="panel">
+        <div class="logo">BallZ</div>
+        <div class="subtitle">Balls Battle Royale</div>
+
+        <div id="message">Creation of the new game...</div>
+    </div>
+</div>
+
+</body>
+</html>

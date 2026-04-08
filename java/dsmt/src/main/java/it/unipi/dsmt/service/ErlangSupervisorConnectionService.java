@@ -27,10 +27,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /*
 requests:
-    new_lobby_req           ->  { pid, new_lobby_req, req_id, {"token"} }               J -> E
-    join_lobby_req          ->  { pid, join_lobby_req, req_id, {"token", lobby_id} }    J -> E
-    stats_req               ->  { pid, stats_req, req_id, {json_string} }               E -> J
-    get_lobbies_req         ->  { pid, get_lobbies_req, req_id, {} }                    J -> E
+    new_lobby_req           ->  { pid, new_lobby_req, req_id, {} }                                  J -> E
+    join_lobby_req          ->  { pid, join_lobby_req, req_id, {"username", "token", lobby_id} }    J -> E
+    stats_req               ->  { pid, stats_req, req_id, {json_string} }                           E -> J
+    get_lobbies_req         ->  { pid, get_lobbies_req, req_id, {} }                                J -> E
 
 responses:
     new_lobby_resp          ->  { pid, new_lobby_resp, req_id, {result(atom), ip_addr, port, lobby_id} }                        E -> J
@@ -309,12 +309,11 @@ public class ErlangSupervisorConnectionService {
     // ---------- FUNCTIONS FOR INTERFACING WITH THE SUPERVISOR ---------- //
 
     /**
-     * Sends a create lobby request to the supervisor and grants access to the game server
-     * @param token client's token
+     * Sends a create lobby request to the supervisor
      * @return the new lobby details, null if an error occurred
      */
-    public LobbyInfoDTO sendCreateLobbyRequest(String token) {
-        OtpErlangTuple payload = new OtpErlangTuple(new OtpErlangString(token));
+    public LobbyInfoDTO sendCreateLobbyRequest() {
+        OtpErlangTuple payload = new OtpErlangTuple(new OtpErlangObject[]{});
         OtpErlangTuple response = sendRequest(new OtpErlangAtom("new_lobby_req"), payload);
 
         if (response == null) {
@@ -345,11 +344,14 @@ public class ErlangSupervisorConnectionService {
 
     /**
      * Grants access to an existing lobby by sending the request to the supervisor
+     * @param username client's username
+     * @param lobbyId lobby id of the game that the client wants authorization
      * @param token client's token
      * @return if the request is successful
      */
-    public boolean sendJoinLobbyRequest(String lobbyId, String token) {
+    public boolean sendJoinLobbyRequest(String username, String lobbyId, String token) {
         OtpErlangTuple payload = new OtpErlangTuple(new OtpErlangObject[]{
+                new OtpErlangString(username),
                 new OtpErlangString(lobbyId),
                 new OtpErlangString(token)
         });
