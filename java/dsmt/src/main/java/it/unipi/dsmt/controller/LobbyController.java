@@ -9,6 +9,8 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,17 +26,8 @@ class LobbyController {
     private ErlangSupervisorConnectionService supervisorConnectionService;
 
     @GetMapping("/create")
-    public ResponseEntity<@NotNull LobbyInfoDTO> startLobby(HttpServletRequest request) {
-        HttpSession session = request.getSession(false);
-        if (session == null) {
-            // client not authenticated (but the request should be filtered before)
-            return ResponseEntity
-                    .status(HttpStatus.UNAUTHORIZED)
-                    .build();
-        }
-        String sessionId = session.getId();
-
-        LobbyInfoDTO lobby = supervisorConnectionService.sendCreateLobbyRequest(sessionId);
+    public ResponseEntity<@NotNull LobbyInfoDTO> createLobby() {
+        LobbyInfoDTO lobby = supervisorConnectionService.sendCreateLobbyRequest();
         if (lobby == null) {
             // an error occurred
             return ResponseEntity
@@ -48,17 +41,21 @@ class LobbyController {
     }
 
     @GetMapping("/join")
-    public ResponseEntity<@NotNull LobbyInfoDTO> joinLobby(HttpServletRequest request, @RequestParam @NotEmpty String lobbyId) {
+    public ResponseEntity<@NotNull LobbyInfoDTO> joinLobby(HttpServletRequest request,
+                                                           Authentication authentication,
+                                                           @RequestParam @NotEmpty String lobbyId) {
         HttpSession session = request.getSession(false);
-        if (session == null) {
+        UserDetails userDetails = ((UserDetails) authentication.getPrincipal());
+        if (session == null || userDetails == null) {
             // client not authenticated (but the request should be filtered before)
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .build();
         }
         String sessionId = session.getId();
+        String username = userDetails.getUsername();
 
-        boolean authorized = supervisorConnectionService.sendJoinLobbyRequest(sessionId, lobbyId);
+        boolean authorized = supervisorConnectionService.sendJoinLobbyRequest(username, lobbyId, sessionId);
         HttpStatus status = authorized ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR;
         return ResponseEntity
                 .status(status)
