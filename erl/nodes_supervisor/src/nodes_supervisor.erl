@@ -100,9 +100,12 @@ handle_call({Pid, get_lobbies_req, ReqId, {}}, _From, State) ->
     
     {Reply, NewState} = get_games_list_logic(State),
 
+
+    GameList = maps:to_list(Reply),
+
     %% sending respost to java
     {springboot_mbox, ?JAVA_NODE} ! 
-        {self(), get_lobbies_req, ReqId, Reply},
+        {self(), get_lobbies_req, ReqId, GameList},
     
     {reply, Reply, NewState};
 
