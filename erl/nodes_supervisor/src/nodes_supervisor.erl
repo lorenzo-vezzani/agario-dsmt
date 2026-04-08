@@ -88,7 +88,11 @@ handle_call({token_auth, Token, PlayerId, GameId}, _From, State) ->
 
 handle_call(get_games_list, _From, State) ->
     {Reply, NewState} = get_games_list_logic(State),
-    {reply, Reply, NewState};
+
+    % converting the game process map into a list (required by java)
+    GameList = maps:to_list(Reply),
+        
+    {reply, GameList, NewState};
 
 
 handle_call({Pid, get_lobbies_req, ReqId, {}}, _From, State) ->
@@ -98,7 +102,7 @@ handle_call({Pid, get_lobbies_req, ReqId, {}}, _From, State) ->
 
     %% sending respost to java
     {springboot_mbox, ?JAVA_NODE} ! 
-        {self(), join_lobby_resp, ReqId, Reply},
+        {self(), get_lobbies_req, ReqId, Reply},
     
     {reply, Reply, NewState};
 
