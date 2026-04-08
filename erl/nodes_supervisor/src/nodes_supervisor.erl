@@ -91,6 +91,17 @@ handle_call(get_games_list, _From, State) ->
     {reply, Reply, NewState};
 
 
+handle_call({Pid, get_lobbies_req, ReqId, {}}, _From, State) ->
+    print_cli("[JAVA-REQ] get_lobbies_req received by ~p: \nReqId=~p", [Pid, ReqId]),
+    
+    {Reply, NewState} = get_games_list_logic(State),
+
+    %% sending respost to java
+    {springboot_mbox, ?JAVA_NODE} ! 
+        {self(), join_lobby_resp, ReqId, Reply},
+    
+    {reply, Reply, NewState};
+
 handle_call(_Req, _From, State) ->
     %% Default for unknown calls
     {reply, {error, unknown_request}, State}.
@@ -127,7 +138,7 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
     end;
 
 %%% ===============================================================
-%%% Communication with Java
+%%% Async Communication with Java
 %%% ===============================================================
 
 handle_cast({Pid, new_lobby_req, ReqId, {}}, State) ->
@@ -146,18 +157,6 @@ handle_cast({Pid, join_lobby_req, ReqId, {Token, PlayerId, GameId}}, State) ->
     print_cli("[JAVA-REQ] join_lobby_req received by ~p: \nReqId=~p \nToken=~p, PlayerId=~p, GameId=~p", [Pid, ReqId, Token, PlayerId, GameId]),
 
     {Reply, NewState} = token_auth_logic(Token, PlayerId, GameId, State),
-
-    %% sending respost to java
-    {springboot_mbox, ?JAVA_NODE} ! 
-        {self(), join_lobby_resp, ReqId, Reply},
-    
-    {noreply, NewState};
-
-
-handle_cast({Pid, get_lobbies_req, ReqId, {}}, State) ->
-    print_cli("[JAVA-REQ] get_lobbies_req received by ~p: \nReqId=~p", [Pid, ReqId]),
-    
-    {Reply, NewState} = get_games_list_logic(State),
 
     %% sending respost to java
     {springboot_mbox, ?JAVA_NODE} ! 
