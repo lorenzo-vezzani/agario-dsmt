@@ -104,6 +104,7 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
     %% Lookup the game in the registry
     case maps:find(GameId, State#state.game_proc) of
 
+        %% game GameId not present
         error ->
             print_cli("{game_temrinated} game ~s not found", [binary:encode_hex(GameId)]),
             {reply, {error, not_found}, State};
@@ -117,6 +118,7 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
                                    node_load = NewNodeLoad},
 
             %% sending stats to java node
+            %% NOTE: i dont know how to model a req_id -> im just using GameId as req_id
             {springboot_mbox, ?JAVA_NODE} ! {self(), stats_req, GameId, {Stats}},
 
             print_cli("Game ~s stopped, tables updated \nStats: ~p", [binary:encode_hex(GameId), Stats]),
