@@ -6,8 +6,10 @@
 %%%
 %%% State:
 %%%   game_id   - binary, the unique identifier of this game session
+%%%   clients   - map of PlayerId (binary) -> {WsPid (pid), Token supervisor, token client} 
 %%%   balls     - map of PlayerId (binary) -> Ball entity (x, y, dx, dy, radius)
-%%%   clients   - map of PlayerId (binary) -> {WsPid (pid), Client stats} 
+%%%   food      - map of FoodId -> Food entity (x, y, value)
+%%%   stats     - map of PlayerId (binary) -> {stats map (deaths, kills)} 
 %%%
 %%% The process registers itself in egs_supervisor ETS table on init
 %%% and unregisters on terminate, so it can always be found by game_id.
@@ -17,7 +19,15 @@
 -behaviour(gen_server).
 
 -export([start_link/1]).
--export([join/2, leave/2, player_input/3, player_rejoin/2]).
+-export([
+    token_auth_client/3, 
+    token_auth_supervisor/3, 
+    player_ask_auth/3,
+    player_join/2, 
+    player_input/3, 
+    player_rejoin/2, 
+    player_leave/2
+]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 
@@ -33,6 +43,8 @@
 
 -define(MAX_FOOD_COUNT, 100).
 
+-define(MAX_PLAYERS, 10).
+
 % state variable names
 -define(STATE_CLIENTS, clients).
 -define(STATE_STATS, stats).
@@ -42,6 +54,10 @@
 -define(IS_BALL_UPDATING, is_ball_updating).
 -define(IS_FOOD_UPDATING, is_food_updating).
 
+-define(TOKEN_TYPE_SUP, token_sup).
+-define(TOKEN_TYPE_CLI, token_cli).
+
+-define(CENTRAL_SUPERVISOR_NAME, 'nodes_supervisor@10.2.1.11').
 
 %%% ---------------------------
 %%% region MANAGEMENT FUNCTIONS
@@ -76,6 +92,9 @@ init(GameId) ->
 
     % register game, for ETS table
     egs_supervisor:register_game(GameId, self()),
+ 
+    % food to eat, 20 initial pieces
+    InitialFood = egs_game_module_utils:gl__spawn_random_food_map(20),
 
     % initializes state
     {ok, #{
@@ -83,7 +102,7 @@ init(GameId) ->
         ?STATE_CLIENTS => #{}, % no clients yet
         ?STATE_STATS => #{}, % no clients yet
         ?STATE_BALL => #{}, % balls empty
-        ?STATE_FOOD => egs_game_module_utils:gl__spawn_random_food_map(20), % food to eat, 20 initial pieces
+        ?STATE_FOOD => InitialFood,
         ?STATE_TIME => 0,
         ?IS_BALL_UPDATING => false,
         ?IS_FOOD_UPDATING => false
@@ -96,64 +115,30 @@ terminate(_Reason, State) ->
 
     % close webosockets
     lists:foreach(
-         fun(#{ws_pid := Pid}) -> Pid ! {close, 1000, <<"gameover">>} end,
-         maps:values(maps:get(?STATE_CLIENTS, State))
-     ),
+        fun(ClientMap) ->
+            % send gameover only to those fully connected
+            case maps:find(ws_pid, ClientMap) of
+                {ok, Pid} -> Pid ! {close, 1000, <<"gameover">>};
+                error -> ok
+            end
+        end,
+        maps:values(maps:get(?STATE_CLIENTS, State))
+    ),
 
     GameId = maps:get(game_id, State),
-    Stats = maps:get(?STATE_STATS, State), % Recupera i dati necessari
+    % TODO SEND STATS ENCODED AS JSON
+    Stats = maps:get(?STATE_STATS, State),
     
-    % Notifica il nodo remoto asincronamente per non bloccare la chiusura
-    gen_server:call({nodes_supervisor, 'nodes_supervisor@10.2.1.11'}, 
-                   {game_terminated, GameId, Stats}),
+    % Notify the remote central supervisor
+    gen_server:cast(
+        {nodes_supervisor, ?CENTRAL_SUPERVISOR_NAME}, 
+        {game_terminated, GameId, Stats}
+    ),
 
+    % notify the local supervisor
     egs_supervisor:unregister_game(GameId),
+
     ok.
-
-
-%%% endregion
-%%% ---------------------------
-%%% region JOIN/LEAVE a game
-%%% ---------------------------
-
-%%% Register the websocket handler (created upon connection by client)
-%%% as a new player in the game GameId
-%%% Via cast message, send the join information to the correct Game Process
-join(GameId, PlayerId) ->
-    print_cli("{join/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
-
-    % lookup game by its id
-    case egs_supervisor:lookup(GameId) of
-
-        % game found, we can register ws handler
-        {ok, Pid} ->
-            % send message JOIN to game process of pid Pid
-            gen_server:cast(Pid, {join, self(), PlayerId}),
-            print_cli("{join/2} found game pid=~p, sending cast", [Pid]);
-
-        % error in lookup
-        Err ->
-            print_cli("{join/2} lookup failed: ~p", [Err]),
-            Err
-    end.
-
-
-%%% Unregisters a websocket handler process from the game
-%%% Called by websocket handler terminate/3 when browser disconnects
-%%%
-%%% GameId: binary game identifier
-%%% PlayerId: binary player name
-leave(GameId, PlayerId) ->
-    print_cli("{leave/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
-
-    % search for the specified game
-    case egs_supervisor:lookup(GameId) of
-
-        % cast 'leave' message
-        {ok, Pid} -> gen_server:cast(Pid, {leave, PlayerId});
-
-        Err -> Err
-    end.
 
 
 %%% endregion
@@ -162,43 +147,90 @@ leave(GameId, PlayerId) ->
 %%% handle messages from client
 %%% ---------------------------
 
-%%% Handles a player joining the game.
-%%% - Initilizes a new ball for the playey
-%%% - Also start monitoring websocket handler pid
-handle_cast({join, WsPid, PlayerId}, State) ->
+%%% Called upon receival of ANY token AND after the auth request
+%%% Completes the authentication if all is present and token are ok
+%%% Code is separated in order to be able to call this from multiple casts
+complete_auth(PlayerId, ClientMap, State) ->
+    
+    TokenSupPresent = maps:is_key(?TOKEN_TYPE_SUP, ClientMap),
+    TokenCliPresent = maps:is_key(?TOKEN_TYPE_CLI, ClientMap),
+    AuthRequested = maps:is_key(ws_pid, ClientMap),
 
-    % Monitor the websocket handler process.
-    % This allows autuomatic removal, via the handler DOWN
-    monitor(process, WsPid),
+    case {TokenSupPresent, TokenCliPresent, AuthRequested} of
 
-    IsBallUpdating = maps:get(?IS_BALL_UPDATING, State),
-    IsFoodUpdating = maps:get(?IS_FOOD_UPDATING, State),
-    CurrentClients = maps:get(?STATE_CLIENTS, State),
-    %% if this is the first client and the balls update isn't active, start updates on balls
-    case {CurrentClients, IsBallUpdating} of
-        {#{}, false} ->
-            % Initializes tick update
-            erlang:send_after(?TICK_MS, self(), tick),
-            print_cli("{handle_cast join} first client joined (~s), starting updating ball", [PlayerId]);
-        _ -> ok
+        % Both tokens and auth requested: we can perform auth
+        {true, true, true} ->
+            TokenSup = maps:get(?TOKEN_TYPE_SUP, ClientMap),
+            TokenCli = maps:get(?TOKEN_TYPE_CLI, ClientMap),
+            WsPid = maps:get(ws_pid, ClientMap),
+
+            % just compare the two tokens
+            {AuthResult, NewClient} = case TokenSup =:= TokenCli of
+
+                % if tokens are equal, return ok and mark the client as authenticated
+                true ->
+                    print_cli("{complete_auth} player=~s OK", [PlayerId]),
+                    {ok, ClientMap#{auth => ok}};
+
+                % otherwise, return error token mismatch
+                false ->
+                    print_cli("{complete_auth} player=~s token_mismatch", [PlayerId]),
+                    {{error, token_mismatch}, ClientMap}
+
+            end,
+
+            % Send result to WebSocket handler 
+            WsPid ! {auth, AuthResult},
+
+            % add the new client to the map
+            % note tha upon error nothing is changed
+            NewClients = maps:put(PlayerId, NewClient, maps:get(?STATE_CLIENTS, State)),
+            {noreply, State#{?STATE_CLIENTS => NewClients}};
+
+        % Not enough data (es token missing), just keep state
+        _ ->
+            {noreply, State}
+    end.
+
+
+% Just a helper function for handle_cast join
+% separated to avoid nesting all of the code into the case true
+perform_join(PlayerId, State) ->
+
+    %%% 1) Check if this is the first player, handle it
+
+    FirstPlayer = case maps:size(maps:get(?STATE_BALL, State)) of
+        0 -> true;
+        _ -> false
     end,
-    %% if this is the first client and the food update isn't active, start updates on food
-    case {CurrentClients, IsFoodUpdating} of
-        {#{}, false} ->
-            % Initializes tick update
-            erlang:send_after(?FOOD_UPDATE_TICK_MS, self(), food),
-            print_cli("{handle_cast join} first client joined (~s), starting updating food", [PlayerId]);
-        _ -> ok
+
+    case FirstPlayer of
+        true ->
+            print_cli("{handle_cast join} first client joined (~s)", [PlayerId]),
+
+            % check if balls are updating
+            case maps:get(?IS_BALL_UPDATING, State) of
+                false ->
+                    erlang:send_after(?TICK_MS, self(), tick),
+                    print_cli("{handle_cast join} Start updating balls", []);
+                true -> ok
+            end,
+
+            % check if food is updating
+            case maps:get(?IS_FOOD_UPDATING, State) of
+                false ->
+                    erlang:send_after(?FOOD_UPDATE_TICK_MS, self(), food),
+                    print_cli("{handle_cast join} Start updating food", []);
+                true -> ok
+            end;
+
+        false -> ok
     end,
+
+    %%% 2) Add the new player with Ball and Stats
 
     % spawns ball at random position with zero direction
     NewBall = egs_game_module_utils:gl__spawn_random_ball(),
-
-    % initialize client state
-    ClientState = #{ws_pid => WsPid},
-
-    % insert new player
-    Clients = maps:put(PlayerId, ClientState, maps:get(?STATE_CLIENTS, State)),
     Balls = maps:put(PlayerId, NewBall, maps:get(?STATE_BALL, State)),
 
     % put a new entry in map ONLY if there's not already one (there may be if player is rejoining after closing the socket)
@@ -215,29 +247,127 @@ handle_cast({join, WsPid, PlayerId}, State) ->
             maps:get(?STATE_STATS, State)
     end,
 
-    % log
-    print_cli("{handle_cast join} player=~s (#clients=~p)", [PlayerId, maps:size(Clients)]),
-
     % return State
     {
         noreply,
 
         % new state map
         State#{
-            ?STATE_CLIENTS => Clients,
             ?STATE_STATS => Stats,
             ?STATE_BALL => Balls,
             ?IS_BALL_UPDATING => true,
             ?IS_FOOD_UPDATING => true
         }
-    };
+    }.
 
+
+handle_cast({token, PlayerId, Token, TokenSource}, State)
+        when    TokenSource =:= ?TOKEN_TYPE_CLI ;
+                TokenSource =:= ?TOKEN_TYPE_SUP ->
+
+    CurrentClients = maps:get(?STATE_CLIENTS, State),
+
+    % construct new client
+    NewClient = case maps:find(PlayerId, CurrentClients) of
+
+        % if found, then update the client map with this token
+        {ok, ExistingClient} ->
+            print_cli("{token} player=~s (~s second)", [PlayerId, TokenSource]),
+            ExistingClient#{TokenSource => Token};
+
+        % if NOT found, then create the client map with only this token
+        error ->
+            print_cli("{token} player=~s (~s first)", [PlayerId, TokenSource]),
+            #{TokenSource => Token}
+
+    end,
+
+    % update the state
+    NewClients = maps:put(PlayerId, NewClient, CurrentClients),
+    NewState = State#{?STATE_CLIENTS => NewClients},
+
+    % Try to complete the authentication
+    complete_auth(PlayerId, NewClient, NewState);
+
+% handle cast token when Source is wrong
+handle_cast({token, PlayerId, _Token, TokenSource}, State) ->
+    print_cli("{token} player=~s wrong token source ~p", [PlayerId, TokenSource]),
+    {noreply, State};
+
+%%% Handles request for authentication by the client
+%%% Also start monitoring websocket handler
+handle_cast({auth, PlayerId, WsPid}, State) ->
+    CurrentClients = maps:get(?STATE_CLIENTS, State),
+
+    % Monitor the websocket handler process.
+    % This allows autuomatic removal, via the handler DOWN
+    monitor(process, WsPid),
+
+    % adds the request to the client map
+    AskingClient = case maps:find(PlayerId, CurrentClients) of
+        {ok, Existing} -> Existing#{ws_pid => WsPid};
+        error -> #{ws_pid => WsPid}
+    end,
+
+    % update the state
+    NewClients = maps:put(PlayerId, AskingClient, CurrentClients),
+    NewState = State#{?STATE_CLIENTS => NewClients},
+    
+    % Try to complete the authentication
+    complete_auth(PlayerId, AskingClient, NewState);
+
+
+%%% Handles a player joining the game.
+%%% - Checks that player is already authenticated
+%%% - Handles the initialization of time and food if first player
+%%% - Initilizes a new ball for the player
+handle_cast({join, PlayerId}, State) ->
+
+    %%% 0) Check that joining client is authenticated
+
+    CurrentClients = maps:get(?STATE_CLIENTS, State),
+
+    % check that client map is present
+    case maps:find(PlayerId, CurrentClients) of
+        
+        % if client map is present
+        {ok, JoiningClient} ->
+            
+            % Check that auth is present
+            case maps:is_key(auth, JoiningClient) of
+
+                true ->
+                    print_cli("{handle_cast join} player=~s", [PlayerId]),
+
+                    ClientsCount = map_size(CurrentClients),
+                    case ClientsCount =< ?MAX_PLAYERS of
+                        % limit not reached yet
+                        true -> 
+                            print_cli("{handle_cast join} Number of players now = ~p", [ClientsCount]),
+                            perform_join(PlayerId, State);
+
+                        % if too many players just keep state
+                        false ->
+                            print_cli("{handle_cast join} Maximum number of players reached (~p)", [ClientsCount]),
+                            {noreply, State}
+                    end;
+
+                % if not just keep state
+                false -> 
+                    print_cli("{handle_cast join} player=~s not authenticated", [PlayerId]),
+                    {noreply, State}
+            end;
+
+        error ->
+            print_cli("{handle_cast join} player=~s not found", [PlayerId]),
+            {noreply, State}
+    end;
 
 %%% Handles a player re-joining the game after being killed.
 %%% Chekcs that the socket and stats already exists AND
 %%% that the ball doesn't exists
 %%% - Initilizes a new ball for the player
-handle_cast({rejoin, WsPid, PlayerId}, State) ->
+handle_cast({rejoin, PlayerId}, State) ->
 
     StatePresent = maps:is_key(PlayerId, maps:get(?STATE_STATS, State)),
     ClientPresent = maps:is_key(PlayerId, maps:get(?STATE_CLIENTS, State)),
@@ -302,7 +432,7 @@ handle_cast({player_input, PlayerId, Msg}, State) ->
     end;
 
 
-%%% Handles a player leaving the game cleanly (browser tab closed normally).
+%%% Handles a player leaving the game cleanly (browser closed)
 %%% Removes the player from both maps.
 handle_cast({leave, PlayerId}, State) ->
 
@@ -322,31 +452,63 @@ handle_cast({leave, PlayerId}, State) ->
     % update state
     {noreply, State#{?STATE_CLIENTS => Clients, ?STATE_BALL => Balls}}.
 
+%%% endregion
+%%% ---------------------------
+%%% region HANDLE CAST Wrappers
+%%% Redirect messages to Game Process, given GameId
+%%% ---------------------------
 
-%%% Send a raw browser message to the game process
-%%% Parsing of message is inside handle_cast, this is 
-%%% just a wrapper to avoid sending to non-existing pid
-player_input(GameId, PlayerId, Msg) ->
 
-    % lookup pid of the game process
+token_auth_client(GameId, PlayerId, Token) ->
+    print_cli("{token_auth_client/3} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
     case egs_supervisor:lookup(GameId) of
+        {ok, Pid} -> gen_server:cast(Pid, {token, PlayerId, Token, ?TOKEN_TYPE_CLI});
+        Err -> Err
+    end.
 
-        % if found, send the raw message to the game process
-        {ok, Pid} -> gen_server:cast(Pid, {player_input, PlayerId, Msg});
+token_auth_supervisor(GameId, PlayerId, Token) ->
+    print_cli("{token_auth_supervisor/3} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    case egs_supervisor:lookup(GameId) of
+        {ok, Pid} -> gen_server:cast(Pid, {token, PlayerId, Token, ?TOKEN_TYPE_SUP});
+        Err -> Err
+    end.
 
-        % not found
+player_ask_auth(GameId, PlayerId, WsPid) ->
+    print_cli("{player_ask_auth/3} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    case egs_supervisor:lookup(GameId) of
+        {ok, Pid} -> gen_server:cast(Pid, {auth, PlayerId, WsPid});
+        Err -> Err
+    end.
+
+player_join(GameId, PlayerId) ->
+    print_cli("{player_join/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    case egs_supervisor:lookup(GameId) of
+        {ok, Pid} -> gen_server:cast(Pid, {join, PlayerId});
         Err -> Err
     end.
 
 player_rejoin(GameId, PlayerId) ->
-
-    % lookup pid of the game process
+    print_cli("{player_rejoin/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
     case egs_supervisor:lookup(GameId) of
+        {ok, Pid} -> gen_server:cast(Pid, {rejoin, PlayerId});
+        Err -> Err
+    end.
 
-        % if found, send the raw message to the game process
-        {ok, Pid} -> gen_server:cast(Pid, {rejoin, self(), PlayerId});
+%%% Send a raw browser message to the game process
+%%% Parsing of message is inside handle_cast
+player_input(GameId, PlayerId, Msg) ->
+    print_cli("{player_input/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    case egs_supervisor:lookup(GameId) of
+        {ok, Pid} -> gen_server:cast(Pid, {player_input, PlayerId, Msg});
+        Err -> Err
+    end.
 
-        % not found
+%%% Unregisters a websocket handler process from the game
+%%% Called by websocket handler terminate/3 when browser disconnects
+player_leave(GameId, PlayerId) ->
+    print_cli("{player_leave/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    case egs_supervisor:lookup(GameId) of
+        {ok, Pid} -> gen_server:cast(Pid, {leave, PlayerId});
         Err -> Err
     end.
 
@@ -506,9 +668,16 @@ handle_call(_Req, _From, State) ->
 
 %%% Sends the payload to all connected WS handler pids.
 broadcast(Clients, Atom, Payload) ->
-    % get websocket handlers PIDs (list)
-    WsHandlerPIDs = [maps:get(ws_pid, ClientMap) || ClientMap <- maps:values(Clients)],
 
+    % get websocket handlers PIDs (list)
+    % ws_pid my not be present if client is in the middle of auth proces
+    WsHandlerPIDs = [
+        maps:get(ws_pid, ClientMap)             % get WsPid from the clientMap
+        || ClientMap <- maps:values(Clients),   % ClientMap are just the single maps of Clients
+        maps:is_key(ws_pid, ClientMap)          % ONLY IF ws_pid is present
+    ],
+
+    % juts send the same message to everyone
     lists:foreach(
         fun(Pid) ->
             Pid ! {Atom, Payload}

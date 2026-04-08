@@ -785,9 +785,9 @@ function onGameOver(data) {
 // ──────────────────────────────────────────────────────────
 // WEBSOCKET CONNECT
 // ──────────────────────────────────────────────────────────
-function connect(hostIp, hostPort, gameId, playerId) {
+function connect(hostIp, hostPort, gameId, playerId, token) {
 
-    if (!hostIp || !hostPort || !gameId || !playerId) {
+    if (!hostIp || !hostPort || !gameId || !playerId || !token) {
         showError('ERROR: Not all connection parameters have been specified');
         return;
     }
@@ -797,7 +797,7 @@ function connect(hostIp, hostPort, gameId, playerId) {
     $enterBtn.textContent = '... Entering';
     everConnected = false;
 
-    const url = `wss://${hostIp}:${hostPort}/ws/${encodeURIComponent(gameId)}/${encodeURIComponent(playerId)}`;
+    const url = `wss://${hostIp}:${hostPort}/ws/${encodeURIComponent(gameId)}/${encodeURIComponent(playerId)}?token=${encodeURIComponent(token)}`;
 
     try {
         ws = new WebSocket(url);
@@ -806,21 +806,26 @@ function connect(hostIp, hostPort, gameId, playerId) {
         return;
     }
 
-    ws.onopen = () => { /* waiting for first message */ };
+    ws.onopen = () => {};
 
     ws.onmessage = e => {
         let data;
         try { data = JSON.parse(e.data); } catch (_) { return; }
 
         switch (data.type) {
+
+            case "auth_ok":
+                enterGame();
+                break;
+
             case "state":
                 if (Array.isArray(data.balls)) latestBalls = data.balls;
                 if (Array.isArray(data.food))  latestFood  = data.food;
                 if (Array.isArray(data.stats)) latestStats = data.stats;
 
-                // ── Death detection (only while actively in game)
+                // Death detection (only while actively in game)
                 if (everConnected && !isDead) {
-                    const meAlive = latestBalls.some(b => b.id === INIT_PLAYER_ID);
+                    const meAlive = latestBalls.some(b => b.id === playerId);
                     if (meAlive) {
                         playerWasAlive = true;
                     } else if (playerWasAlive) {
@@ -840,14 +845,12 @@ function connect(hostIp, hostPort, gameId, playerId) {
             default: 
                 console.warn("unknown message type", data.type);
         }
-
-        if (!everConnected) enterGame();
     };
 
     ws.onclose = e => {
         if (!everConnected) {
             if (e.code === 1008) {
-                showError(`ERROR: game "${INIT_GAME_ID}" not found on server  [code 1008]`);
+                showError(`ERROR: Access denied or game "${gameId}" not found on server [code 1008]`);
             } else if (e.code === 1006) {
                 showError(`ERROR: Connection closed by ${hostIp}:${hostPort} [code 1006]`);
             } else {
@@ -858,7 +861,7 @@ function connect(hostIp, hostPort, gameId, playerId) {
         }
     };
 
-    ws.onerror = () => { /* onclose fires right after */ };
+    ws.onerror = () => {};
 }
 
 // ──────────────────────────────────────────────────────────
@@ -882,7 +885,8 @@ document.addEventListener('keydown', e => {
             INIT_HOST_IP,
             INIT_HOST_PORT,
             INIT_GAME_ID,
-            INIT_PLAYER_ID
+            INIT_PLAYER_ID,
+            INIT_GAME_TOKEN
         );
         return;
     }
@@ -902,6 +906,7 @@ $enterBtn.addEventListener('click', () => {
         INIT_HOST_IP,
         INIT_HOST_PORT,
         INIT_GAME_ID,
-        INIT_PLAYER_ID
+        INIT_PLAYER_ID,
+        INIT_GAME_TOKEN
     )
 });

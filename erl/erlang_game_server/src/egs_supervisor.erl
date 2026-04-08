@@ -35,11 +35,8 @@
 
 -define(GAME_PROC_TABLE,    game_proc_table).
 
--define(NODES_SUP, 'nodes_supervisor@10.2.1.11')
+-define(NODES_SUP, 'nodes_supervisor@10.2.1.11').
 
-dbg__crash_module() ->
-    Arg = 10,
-    io:format("~s", [Arg]).
 
 % Module specific cli print
 print_cli(Text, Args) -> egs_utils:print_cli("SUPERVIS.", Text, Args).
