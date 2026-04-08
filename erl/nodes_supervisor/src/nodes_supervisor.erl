@@ -7,7 +7,7 @@
 -behaviour(gen_server).
 
 %% Public API
--export([start_link/0, start_game/0, stop_game/1, game_terminated/2, get_games_list/0]).
+-export([start_link/0, start_game/1, stop_game/1, game_terminated/2, token_auth/3, get_games_list/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -19,6 +19,8 @@
     'egs@10.2.1.5',
     'egs@10.2.1.6'
 ]).
+
+-define (WS_PORT, 49153).
 
 -define(JAVA_NODE, 'springboot_node@10.2.1.13').
 
@@ -40,8 +42,8 @@ start_link() ->
 
 %% Synchronous call: returns {ok, GameId, Node} or {error, empty_table}
 %% This api starts a game
-start_game() ->
-    gen_server:call(?SERVER, start_game).
+start_game(Token) ->
+    gen_server:call(?SERVER, {start_game, Token}).
 
 
 %% Synchronous call: returns ok or {error, not_found}
@@ -49,6 +51,10 @@ start_game() ->
 stop_game(GameId) ->
     gen_server:call(?SERVER, {stop_game, GameId}).
 
+
+%% This api allows a player to be identified by the relative token in the target game server
+token_auth(Token, PlayerId, GameId) ->
+    gen_server:call(?SERVER, {token_auth, Token, PlayerId, GameId}).
 
 %% Synchronous call: returns ok or {error, not_found}
 %% After a game termination notified by someone of the workers, the local maps are updated accorrdingly
@@ -83,7 +89,7 @@ init([]) ->
     {ok, #state{game_proc = #{}, node_load = NodeLoad}}.
 
 
-handle_call(start_game, _From, State) ->
+handle_call({start_game, Token}, _From, State) ->
     %% Find node with the least load
     case find_least_loaded_node(State#state.node_load) of
 
@@ -94,7 +100,7 @@ handle_call(start_game, _From, State) ->
             GameId = generate_game_id(),
 
             %% Start the game on the selected node via RPC
-            case rpc:call(TargetNode, egs_supervisor, start_game, [GameId]) of
+            case rpc:call(TargetNode, egs_supervisor, start_game, [GameId, Token]) of
                 {ok, Pid} ->
                     %% Update internal state
                     NewGameProc = maps:put(GameId, TargetNode, State#state.game_proc),
@@ -104,12 +110,39 @@ handle_call(start_game, _From, State) ->
                                         node_load = NewNodeLoad},
 
                     print_cli("Game ~s successfully started on ~p", [binary:encode_hex(GameId), TargetNode]),
+
+                    %% sending to requiring java node the target node details
+                    {springboot_mbox, ?JAVA_NODE} ! {ok, TargetNode, ?WS_PORT, GameId},
+
                     {reply, {ok, GameId, TargetNode, Pid}, NewState};
-                {badrpc, Reason} ->
+
+                %% RPC fail
+                {Reason} ->
                     print_cli("rpc:call failed on node ~p: ~p", [TargetNode, Reason]),
                     {reply, {error, {node_unavailable, Reason}}, State}
             end
 
+    end;
+
+handle_call({token_auth, Token, PlayerId, GameId}, _From, State) ->
+    case maps:find(GameId, State#state.game_proc) of
+
+        error ->
+            print_cli("{token_auth} game ~s not found", [binary:encode_hex(GameId)]),
+            {reply, {error, not_found}, State};
+
+        {ok, TargetNode} ->
+            %% Allowing player=PlayerId to play in game=GameId
+            case rpc:call(TargetNode, egs_game_module, token_auth_supervisor, [Token, PlayerId, GameId]) of
+                {} -> 
+                    %% sending to requiring java node confirm
+                    {reply, ok, State};
+
+                %% RPC fail
+                {Reason} ->
+                    print_cli("rpc:call failed on node ~p: ~p", [TargetNode, Reason]),
+                    {reply, {error, {node_unavailable, Reason}}, State}
+            end
     end;
 
 
@@ -190,19 +223,50 @@ handle_call({unregister_node, NodeId}, _From, State) ->
             {reply, ok, State#state{node_load = NewNodeLoad}}
     end;
 
+
 handle_call(get_games_list, _From, State) ->
     {reply, State#state.game_proc, State}
     ;
 
+%%% ===============================================================
+%%% Default functions 
+%%% ===============================================================
 
 handle_call(_Req, _From, State) ->
     %% Default for unknown calls
     {reply, {error, unknown_request}, State}.
 
-handle_cast(_Msg, State)        -> {noreply, State}.
 handle_info(_Info, State)       -> {noreply, State}.
 terminate(_Reason, _State)      -> ok.
 code_change(_OldVsn, State, _)  -> {ok, State}.
+
+
+%%% ===============================================================
+%%% Communication with Java
+%%% ===============================================================
+
+handle_cast({Pid, new_lobby_req, ReqId, {}}, State) ->
+    print_cli("[JAVA-REQ] join_lobby_req received by ~p: \nReqId=~p", [Pid, ReqId]),
+    {springboot_mbox, ?JAVA_NODE} ! 
+        {self(), join_lobby_resp, ReqId, gen_server:call(?SERVER, [start_game])},
+
+    {noreply, State};
+
+handle_cast({Pid, join_lobby_req, ReqId, {Token, PlayerId, GameId}}, State) ->
+    print_cli("[JAVA-REQ] join_lobby_req received by ~p: \nReqId=~p \nToken=~p, PlayerId=~p, GameId=~p", [Pid, ReqId, Token, PlayerId, GameId]),
+    {springboot_mbox, ?JAVA_NODE} ! 
+        {self(), join_lobby_resp, ReqId, gen_server:call(?SERVER, [token_auth, Token, PlayerId, GameId])},
+    
+    {noreply, State};
+
+handle_cast({Pid, get_lobbies_req, ReqId, {}}, State) ->
+    print_cli("[JAVA-REQ] join_lobby_req received by ~p: \nReqId=~p", [Pid, ReqId]),
+    {springboot_mbox, ?JAVA_NODE} ! 
+        {self(), join_lobby_resp, ReqId, gen_server:call(?SERVER, [get_games_list])},
+    
+    {noreply, State};
+
+handle_cast(_Msg, State) -> {noreply, State}.
 
 
 %%% ============================================================
@@ -231,3 +295,4 @@ find_least_loaded_node(NodeLoad) ->
 print_cli(Text, Args) ->
     %% Print messages with supervisor prefix
     supervisor_utils:print_cli("SUPERVIS.", Text, Args).
+
