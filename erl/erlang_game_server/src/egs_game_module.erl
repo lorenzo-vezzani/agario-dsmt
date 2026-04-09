@@ -126,13 +126,15 @@ terminate(_Reason, State) ->
     ),
 
     GameId = maps:get(game_id, State),
-    % TODO SEND STATS ENCODED AS JSON
+
     Stats = maps:get(?STATE_STATS, State),
+    Balls = maps:get(?STATE_BALL, State),
+    Payload = egs_game_module_utils:encode__gameover(Stats, Balls)
     
     % Notify the remote central supervisor
     gen_server:cast(
         {nodes_supervisor, ?CENTRAL_SUPERVISOR_NAME}, 
-        {game_terminated, GameId, Stats}
+        {game_terminated, GameId, Payload}
     ),
 
     % notify the local supervisor
@@ -246,6 +248,12 @@ perform_join(PlayerId, State) ->
         true ->
             maps:get(?STATE_STATS, State)
     end,
+
+    %%% 3) Inform the central supervisor of the completed join
+    gen_server:cast(
+        {nodes_supervisor, ?CENTRAL_SUPERVISOR_NAME}, 
+        {join_completed, maps:get(game_id, State)}
+    ),
 
     % return State
     {
@@ -442,6 +450,12 @@ handle_cast({leave, PlayerId}, State) ->
 
     % log
     print_cli("{handle_cast leave} player=~s", [PlayerId]),
+
+    % Inform the central supervisor of the leave
+    gen_server:cast(
+        {nodes_supervisor, ?CENTRAL_SUPERVISOR_NAME}, 
+        {leave_completed, maps:get(game_id, State)}
+    ),
 
     %% if no clients left, we can conclude the game
     case map_size(Clients) of
