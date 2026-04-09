@@ -16,6 +16,7 @@
 -define(SERVER, ?MODULE).
 
 -define(INITIAL_NODES, [
+    'egs@10.2.1.4',
     'egs@10.2.1.5',
     'egs@10.2.1.6'
 ]).
@@ -105,6 +106,21 @@ handle_call({get_lobbies_req, ReqId, {}}, _From, State) ->
     {reply, {get_lobbies_resp, ReqId, {ok, GameList}}, NewState};
 
 
+handle_call({new_lobby_req, ReqId, {}}, _From, State) ->
+    print_cli("[JAVA-REQ] new_lobby_req received by JAVA: \nReqId=~p", [ReqId]),
+    
+    {Reply, NewState} = start_game_logic(State),
+
+    {reply, {join_lobby_resp, ReqId, Reply}, NewState};
+
+
+handle_call({join_lobby_req, ReqId, {Token, PlayerId, GameId}}, _From, State) ->
+    print_cli("[JAVA-REQ] join_lobby_req received by JAVA: \nReqId=~p \nToken=~p, PlayerId=~p, GameId=~p", [ReqId, Token, PlayerId, GameId]),
+
+    {Reply, NewState} = token_auth_logic(Token, PlayerId, GameId, State),
+    
+    {reply, {join_lobby_resp, ReqId, Reply}, NewState};
+
 handle_call(_Req, _From, State) ->
     %% Default for unknown calls
     {reply, {error, unknown_request}, State}.
@@ -139,34 +155,6 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
 
             {noreply, NewState}
     end;
-
-%%% ===============================================================
-%%% Async Communication with Java
-%%% ===============================================================
-
-handle_cast({Pid, new_lobby_req, ReqId, {}}, State) ->
-    print_cli("[JAVA-REQ] new_lobby_req received by ~p: \nReqId=~p", [Pid, ReqId]),
-    
-    {Reply, NewState} = start_game_logic(State),
-
-    %% sending respost to java
-    {springboot_mbox, ?JAVA_NODE} ! 
-        {self(), join_lobby_resp, ReqId, Reply},
-
-    {noreply, NewState};
-
-
-handle_cast({Pid, join_lobby_req, ReqId, {Token, PlayerId, GameId}}, State) ->
-    print_cli("[JAVA-REQ] join_lobby_req received by ~p: \nReqId=~p \nToken=~p, PlayerId=~p, GameId=~p", [Pid, ReqId, Token, PlayerId, GameId]),
-
-    {Reply, NewState} = token_auth_logic(Token, PlayerId, GameId, State),
-
-    %% sending respost to java
-    {springboot_mbox, ?JAVA_NODE} ! 
-        {self(), join_lobby_resp, ReqId, Reply},
-    
-    {noreply, NewState};
-
 
 handle_cast(_Msg, State) -> {noreply, State}.
 
@@ -218,7 +206,7 @@ start_game_logic(State) ->
                         [binary:encode_hex(GameId), TargetNode]
                     ),
 
-                    {{ok, GameId, TargetNode, Pid}, NewState};
+                    {ok, NewState};
 
                 %% rpc bad call
                 Reason ->
