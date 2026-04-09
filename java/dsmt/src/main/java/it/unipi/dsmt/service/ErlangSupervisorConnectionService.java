@@ -96,7 +96,7 @@ public class ErlangSupervisorConnectionService {
             applicationContext.close();
             return;
         }
-        logger.info("Supervisor set at {}", "nodes_supervisor@" + agarioConfig.getSupervisorIp());
+        logger.info("Supervisor set at {}", agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp());
 
         // listener process
         taskExecutor.execute(() -> {
@@ -215,7 +215,7 @@ public class ErlangSupervisorConnectionService {
                 }
         );
         OtpErlangTuple toSend = buildGenServerCall(msg);
-        currentMbox.send(agarioConfig.getSupervisorMb(), "nodes_supervisor@" + agarioConfig.getSupervisorIp(), toSend);
+        currentMbox.send(agarioConfig.getSupervisorMb(), agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp(), toSend);
     }
 
     /**

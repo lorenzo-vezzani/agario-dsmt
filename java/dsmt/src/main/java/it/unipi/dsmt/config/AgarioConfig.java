@@ -11,6 +11,7 @@ public class AgarioConfig {
     private String selfErlangIp;
     private String supervisorCookie;
     private String supervisorMb;
+    private String supervisorNodeName;
 
     public String getSupervisorIp() {
         return supervisorIp;
@@ -42,5 +43,13 @@ public class AgarioConfig {
 
     public void setSupervisorMb(String supervisorMb) {
         this.supervisorMb = supervisorMb;
+    }
+
+    public String getSupervisorNodeName() {
+        return supervisorNodeName;
+    }
+
+    public void setSupervisorNodeName(String supervisorNodeName) {
+        this.supervisorNodeName = supervisorNodeName;
     }
 }
