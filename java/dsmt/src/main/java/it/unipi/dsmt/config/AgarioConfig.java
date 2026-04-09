@@ -10,6 +10,7 @@ public class AgarioConfig {
     private String supervisorIp;
     private String selfErlangIp;
     private String supervisorCookie;
+    private String supervisorMb;
 
     public String getSupervisorIp() {
         return supervisorIp;
@@ -33,5 +34,13 @@ public class AgarioConfig {
 
     public void setSupervisorCookie(String supervisorCookie) {
         this.supervisorCookie = supervisorCookie;
+    }
+
+    public String getSupervisorMb() {
+        return supervisorMb;
+    }
+
+    public void setSupervisorMb(String supervisorMb) {
+        this.supervisorMb = supervisorMb;
     }
 }
