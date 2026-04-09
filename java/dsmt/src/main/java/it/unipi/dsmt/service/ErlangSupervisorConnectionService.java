@@ -27,16 +27,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /*
 requests:
-    new_lobby_req           ->  { pid, new_lobby_req, req_id, {} }                                  J -> E
-    join_lobby_req          ->  { pid, join_lobby_req, req_id, {"username", "token", lobby_id} }    J -> E
-    stats_req               ->  { pid, stats_req, req_id, {json_string} }                           E -> J
-    get_lobbies_req         ->  { pid, get_lobbies_req, req_id, {} }                                J -> E
+    new_lobby_req           ->  { new_lobby_req, req_id, {} }                                  J -> E
+    join_lobby_req          ->  { join_lobby_req, req_id, {"username", "token", lobby_id} }    J -> E
+    stats_req               ->  { stats_req, req_id, {json_string} }                           E -> J
+    get_lobbies_req         ->  { get_lobbies_req, req_id, {} }                                J -> E
 
 responses:
-    new_lobby_resp          ->  { pid, new_lobby_resp, req_id, {result(atom), ip_addr, port, lobby_id} }                        E -> J
-    join_lobby_resp         ->  { pid, join_lobby_resp, req_id, {result(atom)} }                                                E -> J
-    stats_resp              ->  { pid, stats_resp, req_id, {result (atom)} }                                                    J -> E
-    get_lobbies_resp        ->  { pid, get_lobbies_resp, req_id, {result (atom), [{ip_addr, port, lobby_id, n_players}, ...]} } E -> J
+    new_lobby_resp          ->  { new_lobby_resp, req_id, {result(atom), ip_addr, port, lobby_id} }                        E -> J
+    join_lobby_resp         ->  { join_lobby_resp, req_id, {result(atom)} }                                                E -> J
+    stats_resp              ->  { stats_resp, req_id, {result (atom)} }                                                    J -> E
+    get_lobbies_resp        ->  { get_lobbies_resp, req_id, {result (atom), [{ip_addr, port, lobby_id, n_players}, ...]} } E -> J
  */
 @Service
 public class ErlangSupervisorConnectionService {
@@ -96,7 +96,7 @@ public class ErlangSupervisorConnectionService {
             applicationContext.close();
             return;
         }
-        logger.info("Supervisor set at {}", "supervisor@" + agarioConfig.getSupervisorIp());
+        logger.info("Supervisor set at {}", agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp());
 
         // listener process
         taskExecutor.execute(() -> {
@@ -107,7 +107,16 @@ public class ErlangSupervisorConnectionService {
                     if (msg == null) {
                         continue;
                     }
-                    processMessage(msg);
+                    System.out.println(msg);
+                    try {
+                        processMessage(msg);
+                    }
+                    catch (ClassCastException e) {
+                        logger.error("Invalid message format received: " + e.getMessage());
+                    }
+                    catch (NullPointerException e) {
+                        logger.error("Error trying to parse message: " + e.getMessage());
+                    }
                 }
                 catch (OtpErlangRangeException e) {
                     logger.warn("Integer range error: {}", e.getMessage());
@@ -151,39 +160,86 @@ public class ErlangSupervisorConnectionService {
     }
 
     /**
+     * Encapsulates the request in a message that gen_server supports
+     * @param request request to send to the supervisor
+     * @return message ready to send
+     */
+    private OtpErlangTuple buildGenServerCall(OtpErlangTuple request) {
+        // Ref
+        OtpErlangRef ref = currentNode.createRef();
+
+        // {FromPid, Ref}
+        OtpErlangTuple from = new OtpErlangTuple(new OtpErlangObject[] {
+                currentMbox.self(),
+                ref
+        });
+
+        // {'$gen_call', {FromPid, Ref}, Request}
+        OtpErlangObject[] msgArr = new OtpErlangObject[] {
+                new OtpErlangAtom("$gen_call"),
+                from,
+                request
+        };
+
+        return new OtpErlangTuple(msgArr);
+    }
+
+    private OtpErlangTuple extractGenServerResponse(OtpErlangTuple response) {
+        if (response.arity() != 2) {
+            logger.error("Incorrect number of arguments for gen_server_response: {}", response);
+            return null;
+        }
+
+        OtpErlangObject ref = response.elementAt(0);
+        OtpErlangObject reply = response.elementAt(1);
+
+        if (!(reply instanceof OtpErlangTuple)) {
+            logger.error("Incorrect response received: {}", reply);
+            return null;
+        }
+        return (OtpErlangTuple) reply;
+    }
+
+    /**
      * Sends a single message with the correct format
      * @param type type of the message
      * @param requestId request id of the message
      * @param content payload of the message
      */
     private void sendMessage(OtpErlangAtom type, int requestId, OtpErlangTuple content) {
-        OtpErlangObject msg = new OtpErlangTuple(
+        OtpErlangTuple msg = new OtpErlangTuple(
                 new OtpErlangObject[]{
-                        currentMbox.self(),
                         type,
                         new OtpErlangInt(requestId),
                         content
                 }
         );
-        currentMbox.send("supervisor_mb", "supervisor@" + agarioConfig.getSupervisorIp(), msg);
+        OtpErlangTuple toSend = buildGenServerCall(msg);
+        currentMbox.send(agarioConfig.getSupervisorMb(), agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp(), toSend);
     }
 
     /**
      * Processes a received message.
-     * The message must be a tuple with the following format:
-     * { pid, type (atom), req_id (int), {content} }
-     * @param msg received message
+     * @param packet received message
      * @throws OtpErlangRangeException if the conversion from erlang integer to java integer goes wrong
      */
-    private void processMessage(OtpErlangObject msg) throws OtpErlangRangeException {
-        OtpErlangTuple tuple = (OtpErlangTuple) msg;
-        String pid = tuple.elementAt(0).toString();
-        String type = tuple.elementAt(1).toString();
-        int req_id = ((OtpErlangLong)(tuple.elementAt(2))).intValue();
-        OtpErlangTuple content = (OtpErlangTuple) tuple.elementAt(3);
+    private void processMessage(OtpErlangObject packet) throws OtpErlangRangeException {
+        if (!(packet instanceof OtpErlangTuple)) {
+            logger.error("invalid message: {}", packet);
+            return;
+        }
+
+        OtpErlangTuple tuple = extractGenServerResponse((OtpErlangTuple) packet);
+        if (tuple == null) {
+            return;
+        }
+
+        String type = tuple.elementAt(0).toString();
+        int req_id = ((OtpErlangLong)(tuple.elementAt(1))).intValue();
+        OtpErlangTuple content = (OtpErlangTuple) tuple.elementAt(2);
 
         // responses
-        if (type.equals("new_lobby_resp") || type.equals("join_lobby_resp") ||  type.equals("get_lobbies_resp")) {
+        if (type.endsWith("_resp")) {
             processResponses(req_id, content);
         }
         // new stats arrived
@@ -192,7 +248,7 @@ public class ErlangSupervisorConnectionService {
         }
         // unknown message received
         else {
-            logger.error("Unrecognized OtpErlangObject type: {}", tuple.toString());
+            logger.error("Unrecognized message type: {}", tuple.toString());
         }
     }
 

@@ -7,18 +7,21 @@
 -behaviour(gen_server).
 
 %% Public API
--export([start_link/0, start_game/0, stop_game/1, game_terminated/2, get_games_list/0]).
+-export([start_link/0, start_game/0, game_terminated/2, token_auth/3, get_games_list/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3, register_node/1, unregister_node/1]).
+         terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
 
 -define(INITIAL_NODES, [
+    'egs@10.2.1.4',
     'egs@10.2.1.5',
     'egs@10.2.1.6'
 ]).
+
+-define (WS_PORT, 49153).
 
 -define(JAVA_NODE, 'springboot_node@10.2.1.13').
 
@@ -41,19 +44,18 @@ start_link() ->
 %% Synchronous call: returns {ok, GameId, Node} or {error, empty_table}
 %% This api starts a game
 start_game() ->
-    gen_server:call(?SERVER, start_game).
+    gen_server:call(?SERVER, {start_game}).
 
 
-%% Synchronous call: returns ok or {error, not_found}
-%% This api stops a game with id=GameId 
-stop_game(GameId) ->
-    gen_server:call(?SERVER, {stop_game, GameId}).
-
-
-%% Synchronous call: returns ok or {error, not_found}
+%% Asynchronous cast: returns ok or {error, not_found}
 %% After a game termination notified by someone of the workers, the local maps are updated accorrdingly
 game_terminated(GameId, Stats) ->
-    gen_server:call(?SERVER, {game_terminated, GameId, Stats}).
+    gen_server:cast(?SERVER, {game_terminated, GameId, Stats}).
+
+
+%% This api allows a player to be identified by the relative token in the target game server
+token_auth(Token, PlayerId, GameId) ->
+    gen_server:call(?SERVER, {token_auth, Token, PlayerId, GameId}).
 
 
 %% Synchronous call: returns the game list in the form of: {game-id, node}
@@ -61,20 +63,9 @@ get_games_list() ->
     gen_server:call(?SERVER, get_games_list).
 
 
-%% Synchronous call: returns {ok} or error if required node already exists
-register_node(NodeId) ->
-    gen_server:call(?SERVER, {register_node, NodeId}).
-
-
-%% Synchronous call: returns {ok, count-of-active-processes} or error if required node is not found
-unregister_node(NodeId) ->
-    gen_server:call(?SERVER, {unregister_node, NodeId}).
-
-
 %%% ============================================================
 %%%  Callbacks
 %%% ============================================================
-
 
 init([]) ->
     %% Initialize empty state
@@ -82,65 +73,68 @@ init([]) ->
     NodeLoad = maps:from_keys(?INITIAL_NODES, 0),
     {ok, #state{game_proc = #{}, node_load = NodeLoad}}.
 
+%%% ============================================================
+%%%  Synch
+%%% ============================================================
 
-handle_call(start_game, _From, State) ->
-    %% Find node with the least load
-    case find_least_loaded_node(State#state.node_load) of
-
-        {error, empty_table} = Err ->
-            {reply, Err, State};
-
-        {ok, TargetNode} ->
-            GameId = generate_game_id(),
-
-            %% Start the game on the selected node via RPC
-            case rpc:call(TargetNode, egs_supervisor, start_game, [GameId]) of
-                {ok, Pid} ->
-                    %% Update internal state
-                    NewGameProc = maps:put(GameId, TargetNode, State#state.game_proc),
-                    NewNodeLoad = maps:update_with(TargetNode, fun(N) -> N + 1 end, 1,
-                                                State#state.node_load),
-                    NewState = State#state{game_proc = NewGameProc,
-                                        node_load = NewNodeLoad},
-
-                    print_cli("Game ~s successfully started on ~p", [binary:encode_hex(GameId), TargetNode]),
-                    {reply, {ok, GameId, TargetNode, Pid}, NewState};
-                {badrpc, Reason} ->
-                    print_cli("rpc:call failed on node ~p: ~p", [TargetNode, Reason]),
-                    {reply, {error, {node_unavailable, Reason}}, State}
-            end
-
-    end;
+handle_call({start_game}, _From, State) ->
+    {Reply, NewState} = start_game_logic(State),
+    {reply, Reply, NewState};
 
 
-handle_call({stop_game, GameId}, _From, State) ->
+handle_call({token_auth, Token, PlayerId, GameId}, _From, State) ->
+    {Reply, NewState} = token_auth_logic(Token, PlayerId, GameId, State),
+    {reply, Reply, NewState};
+
+
+handle_call(get_games_list, _From, State) ->
+    {Reply, NewState} = get_games_list_logic(State),
+
+    % converting the game process map into a list (required by java)
+    GameList = maps:to_list(Reply),
+        
+    {reply, GameList, NewState};
+
+
+handle_call({get_lobbies_req, ReqId, {}}, _From, State) ->
+    print_cli("[JAVA-REQ] get_lobbies_req received by ~p: \nReqId=~p", [_From, ReqId]),
+    
+    {Reply, NewState} = get_games_list_logic(State),
+
+    GameList = maps:to_list(Reply),
+    
+    {reply, {get_lobbies_resp, ReqId, {ok, GameList}}, NewState};
+
+
+handle_call({new_lobby_req, ReqId, {}}, _From, State) ->
+    print_cli("[JAVA-REQ] new_lobby_req received by JAVA: \nReqId=~p", [ReqId]),
+    
+    {Reply, NewState} = start_game_logic(State),
+
+    {reply, {join_lobby_resp, ReqId, Reply}, NewState};
+
+
+handle_call({join_lobby_req, ReqId, {Token, PlayerId, GameId}}, _From, State) ->
+    print_cli("[JAVA-REQ] join_lobby_req received by JAVA: \nReqId=~p \nToken=~p, PlayerId=~p, GameId=~p", [ReqId, Token, PlayerId, GameId]),
+
+    {Reply, NewState} = token_auth_logic(Token, PlayerId, GameId, State),
+    
+    {reply, {join_lobby_resp, ReqId, Reply}, NewState};
+
+handle_call(_Req, _From, State) ->
+    %% Default for unknown calls
+    {reply, {error, unknown_request}, State}.
+
+
+%%% ===============================================================
+%%% Async cast
+%%% ===============================================================
+
+handle_cast({game_terminated, GameId, Stats}, State) ->
     %% Lookup the game in the registry
     case maps:find(GameId, State#state.game_proc) of
 
-        error ->
-            print_cli("{stop_game} game ~s not found", [binary:encode_hex(GameId)]),
-            {reply, {error, not_found}, State};
-
-        {ok, TargetNode} ->
-            %% Stop the game via RPC
-            ok = rpc:call(TargetNode, egs_supervisor, stop_game, [GameId]),
-
-            %% Update internal state
-            NewGameProc = maps:remove(GameId, State#state.game_proc),
-            NewNodeLoad = maps:update_with(TargetNode, fun(N) -> max(0, N - 1) end,
-                                           State#state.node_load),
-            NewState = State#state{game_proc = NewGameProc,
-                                   node_load = NewNodeLoad},
-
-            print_cli("Game ~s stopped, tables updated", [binary:encode_hex(GameId)]),
-            {reply, ok, NewState}
-    end;
-
-
-handle_call({game_terminated, GameId, Stats}, _From, State) ->
-    %% Lookup the game in the registry
-    case maps:find(GameId, State#state.game_proc) of
-
+        %% game GameId not present
         error ->
             print_cli("{game_temrinated} game ~s not found", [binary:encode_hex(GameId)]),
             {reply, {error, not_found}, State};
@@ -154,67 +148,127 @@ handle_call({game_terminated, GameId, Stats}, _From, State) ->
                                    node_load = NewNodeLoad},
 
             %% sending stats to java node
+            %% NOTE: i dont know how to model a req_id -> im just using GameId as req_id
             {springboot_mbox, ?JAVA_NODE} ! {self(), stats_req, GameId, {Stats}},
 
             print_cli("Game ~s stopped, tables updated \nStats: ~p", [binary:encode_hex(GameId), Stats]),
 
-            {reply, ok, NewState}
+            {noreply, NewState}
     end;
 
+handle_cast(_Msg, State) -> {noreply, State}.
 
-handle_call({register_node, NodeId}, _From, State) ->
-    case maps:is_key(NodeId, State#state.node_load) of
-        true ->
-            {reply, {error, already_registered}, State};
+%%% ===============================================================
+%%% Default functions 
+%%% ===============================================================
 
-        false ->
-            NewNodeLoad = maps:put(NodeId, 0, State#state.node_load),
-            print_cli("Node ~p registered", [NodeId]),
-            {reply, ok, State#state{node_load = NewNodeLoad}}
-    end;
-
-handle_call({unregister_node, NodeId}, _From, State) ->
-    case maps:find(NodeId, State#state.node_load) of
-        %% node not found
-        error ->
-            {reply, {error, not_found}, State};
-
-        %% node found, but busy with games
-        {ok, Count} when Count > 0 ->
-            {reply, {error, node_busy}, State};
-        
-        %% node found
-        {ok, 0} ->
-            NewNodeLoad = maps:remove(NodeId, State#state.node_load),
-            print_cli("Node ~p unregistered", [NodeId]),
-            {reply, ok, State#state{node_load = NewNodeLoad}}
-    end;
-
-handle_call(get_games_list, _From, State) ->
-    {reply, State#state.game_proc, State}
-    ;
-
-
-handle_call(_Req, _From, State) ->
-    %% Default for unknown calls
-    {reply, {error, unknown_request}, State}.
-
-handle_cast(_Msg, State)        -> {noreply, State}.
 handle_info(_Info, State)       -> {noreply, State}.
 terminate(_Reason, _State)      -> ok.
 code_change(_OldVsn, State, _)  -> {ok, State}.
 
+%%% ============================================================
+%%%  Logic implementations
+%%% ============================================================
+
+start_game_logic(State) ->
+    %% Find the node with the least number of games rn to implement load balancing strategy
+    case find_least_loaded_node(State#state.node_load) of
+
+        %% No nodes avaible
+        {error, empty_table} = Err ->
+            {Err, State};
+
+        {ok, TargetNode} ->
+            %% Generate a random 32b game id
+            GameId = generate_game_id(),
+
+            %% Contact the local supervisor of the node to start a new game with game-id=GameId
+            case rpc:call(TargetNode, egs_supervisor, start_game, [GameId]) of
+
+                {ok, Pid} ->
+                    %% updating internal state
+                    NewGameProc =
+                        maps:put(GameId, TargetNode, State#state.game_proc),
+
+                    NewNodeLoad =
+                        maps:update_with(TargetNode,
+                                         fun(N) -> N + 1 end,
+                                         1,
+                                         State#state.node_load),
+
+                    NewState = State#state{
+                        game_proc = NewGameProc,
+                        node_load = NewNodeLoad
+                    },
+
+                    print_cli(
+                        "Game ~s successfully started on ~p",
+                        [binary:encode_hex(GameId), TargetNode]
+                    ),
+
+                    {ok, NewState};
+
+                %% rpc bad call
+                Reason ->
+                    print_cli(
+                        "rpc:call failed on node ~p: ~p",
+                        [TargetNode, Reason]
+                    ),
+                    {{error, {node_unavailable, Reason}}, State}
+            end
+    end.
+
+
+token_auth_logic(Token, PlayerId, GameId, State) ->
+    %% control wheter the game with id=GameId actually exists
+    case maps:find(GameId, State#state.game_proc) of
+
+        %% no existing game
+        error ->
+            print_cli(
+                "{token_auth} game ~s not found",
+                [binary:encode_hex(GameId)]
+            ),
+            {{error, not_found}, State};
+
+        {ok, TargetNode} ->
+            %% communicate to node TargetNode the new token (ie a new client that can play)
+            case rpc:call(
+                TargetNode,
+                egs_game_module,
+                token_auth_supervisor,
+                [GameId, PlayerId, Token]
+            ) of
+
+                ok ->
+                    {ok, State};
+
+                %% rpc bad call
+                Reason ->
+                    print_cli(
+                        "rpc:call failed on node ~p: ~p",
+                        [TargetNode, Reason]
+                    ),
+                    {{error, {node_unavailable, Reason}}, State}
+
+            end
+    end.
+
+get_games_list_logic(State) ->
+    {State#state.game_proc, State}.
 
 %%% ============================================================
-%%%  Internal
+%%%  Internal utilities
 %%% ============================================================
 
 generate_game_id() ->
     %% Generate a secure random 32-byte GameId
     crypto:strong_rand_bytes(32).
 
+
 find_least_loaded_node(NodeLoad) when map_size(NodeLoad) =:= 0 ->
     {error, empty_table};
+
 find_least_loaded_node(NodeLoad) ->
     %% Fold over nodes to find the one with minimum load
     {Node, _Count} = maps:fold(
@@ -227,6 +281,7 @@ find_least_loaded_node(NodeLoad) ->
         NodeLoad
     ),
     {ok, Node}.
+
 
 print_cli(Text, Args) ->
     %% Print messages with supervisor prefix

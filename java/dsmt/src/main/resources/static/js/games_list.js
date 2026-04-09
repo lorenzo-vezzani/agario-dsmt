@@ -29,7 +29,7 @@ async function listUpdate() {
         if (data.length === 0) {
             let row = document.createElement("tr");
             let cell = document.createElement("td");
-            cell.innerText = "Error trying to get active servers"
+            cell.innerText = "No active servers found"
             cell.colSpan = 3;
             row.appendChild(cell)
             tbody.appendChild(row);

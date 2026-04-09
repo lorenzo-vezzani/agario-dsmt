@@ -160,7 +160,7 @@ stop_game(GameId, Stats) ->
             % but needed if it crashes without unregistering
             
             %% contacting the supervisor to notify that a game is terminated
-            gen_server:call({nodes_supervisor, 'nodes_supervisor@10.2.1.11'}, {game_terminated, GameId, Stats}),
+            gen_server:cast({nodes_supervisor, 'nodes_supervisor@10.2.1.11'}, {game_terminated, GameId, Stats}),
 
             unregister_game(GameId),
 
