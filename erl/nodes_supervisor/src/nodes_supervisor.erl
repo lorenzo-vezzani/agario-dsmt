@@ -95,19 +95,15 @@ handle_call(get_games_list, _From, State) ->
     {reply, GameList, NewState};
 
 
-handle_call({Pid, get_lobbies_req, ReqId, {}}, _From, State) ->
-    print_cli("[JAVA-REQ] get_lobbies_req received by ~p: \nReqId=~p", [Pid, ReqId]),
+handle_call({get_lobbies_req, ReqId, {}}, _From, State) ->
+    print_cli("[JAVA-REQ] get_lobbies_req received by ~p: \nReqId=~p", [_From, ReqId]),
     
     {Reply, NewState} = get_games_list_logic(State),
 
-
     GameList = maps:to_list(Reply),
-
-    %% sending respost to java
-    {springboot_mbox, ?JAVA_NODE} ! 
-        {self(), get_lobbies_req, ReqId, GameList},
     
-    {reply, Reply, NewState};
+    {reply, {get_lobbies_resp, ReqId, {ok, GameList}}, NewState};
+
 
 handle_call(_Req, _From, State) ->
     %% Default for unknown calls
