@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /*
 requests:
     new_lobby_req           ->  { new_lobby_req, req_id, {} }                                  J -> E
-    join_lobby_req          ->  { join_lobby_req, req_id, {"username", "token", lobby_id} }    J -> E
+    join_lobby_req          ->  { join_lobby_req, req_id, {"username", lobby_id, "token"} }    J -> E
     stats_req               ->  { stats_req, req_id, {json_string} }                           E -> J
     get_lobbies_req         ->  { get_lobbies_req, req_id, {} }                                J -> E
 
