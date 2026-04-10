@@ -40,13 +40,11 @@ print_cli(Text, Args) -> egs_utils:print_cli("WebSocket", Text, Args).
 init(Req, _Opts) ->
     
     % extract game_id and player_id from request
-    GameIdHex = cowboy_req:binding(game_id, Req),
+    GameId = cowboy_req:binding(game_id, Req),
     PlayerId = cowboy_req:binding(player_id, Req),
 
     % extract token from parameters
     #{token := Token} = cowboy_req:match_qs([token], Req),
-
-    GameId = binary:decode_hex(GameIdHex),
 
     print_cli("{init/2} game=~s player=~s", [GameId, PlayerId]),
 
