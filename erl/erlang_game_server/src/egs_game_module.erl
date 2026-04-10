@@ -88,7 +88,7 @@ init(GameId) ->
     % so terminate/2 is always called for proper ETS cleanup
     process_flag(trap_exit, true),
 
-    print_cli("{init/1} starting game=~s", [binary:encode_hex(GameId)]),
+    print_cli("{init/1} starting game=~s", [GameId]),
 
     % register game, for ETS table
     egs_supervisor:register_game(GameId, self()),
@@ -111,7 +111,7 @@ init(GameId) ->
 
 %%% Called when the game process is shutting down (normally or after a crash)
 terminate(_Reason, State) ->
-    print_cli("{terminate/2} game=~s shutting down", [binary:encode_hex(maps:get(game_id, State))]),
+    print_cli("{terminate/2} game=~s shutting down", [maps:get(game_id, State)]),
 
     % close webosockets
     lists:foreach(
@@ -474,35 +474,35 @@ handle_cast({leave, PlayerId}, State) ->
 
 
 token_auth_client(GameId, PlayerId, Token) ->
-    print_cli("{token_auth_client/3} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    print_cli("{token_auth_client/3} game=~s player=~s", [GameId, PlayerId]),
     case egs_supervisor:lookup(GameId) of
         {ok, Pid} -> gen_server:cast(Pid, {token, PlayerId, Token, ?TOKEN_TYPE_CLI});
         Err -> Err
     end.
 
 token_auth_supervisor(GameId, PlayerId, Token) ->
-    print_cli("{token_auth_supervisor/3} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    print_cli("{token_auth_supervisor/3} game=~s player=~s", [GameId, PlayerId]),
     case egs_supervisor:lookup(GameId) of
         {ok, Pid} -> gen_server:cast(Pid, {token, PlayerId, Token, ?TOKEN_TYPE_SUP});
         Err -> Err
     end.
 
 player_ask_auth(GameId, PlayerId, WsPid) ->
-    print_cli("{player_ask_auth/3} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    print_cli("{player_ask_auth/3} game=~s player=~s", [GameId, PlayerId]),
     case egs_supervisor:lookup(GameId) of
         {ok, Pid} -> gen_server:cast(Pid, {auth, PlayerId, WsPid});
         Err -> Err
     end.
 
 player_join(GameId, PlayerId) ->
-    print_cli("{player_join/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    print_cli("{player_join/2} game=~s player=~s", [GameId, PlayerId]),
     case egs_supervisor:lookup(GameId) of
         {ok, Pid} -> gen_server:cast(Pid, {join, PlayerId});
         Err -> Err
     end.
 
 player_rejoin(GameId, PlayerId) ->
-    print_cli("{player_rejoin/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    print_cli("{player_rejoin/2} game=~s player=~s", [GameId, PlayerId]),
     case egs_supervisor:lookup(GameId) of
         {ok, Pid} -> gen_server:cast(Pid, {rejoin, PlayerId});
         Err -> Err
@@ -511,7 +511,7 @@ player_rejoin(GameId, PlayerId) ->
 %%% Send a raw browser message to the game process
 %%% Parsing of message is inside handle_cast
 player_input(GameId, PlayerId, Msg) ->
-    print_cli("{player_input/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    print_cli("{player_input/2} game=~s player=~s", [GameId, PlayerId]),
     case egs_supervisor:lookup(GameId) of
         {ok, Pid} -> gen_server:cast(Pid, {player_input, PlayerId, Msg});
         Err -> Err
@@ -520,7 +520,7 @@ player_input(GameId, PlayerId, Msg) ->
 %%% Unregisters a websocket handler process from the game
 %%% Called by websocket handler terminate/3 when browser disconnects
 player_leave(GameId, PlayerId) ->
-    print_cli("{player_leave/2} game=~s player=~s", [binary:encode_hex(GameId), PlayerId]),
+    print_cli("{player_leave/2} game=~s player=~s", [GameId, PlayerId]),
     case egs_supervisor:lookup(GameId) of
         {ok, Pid} -> gen_server:cast(Pid, {leave, PlayerId});
         Err -> Err

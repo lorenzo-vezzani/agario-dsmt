@@ -131,12 +131,12 @@ start_game(GameId) ->
     case lookup(GameId) of
 
         {error, not_found} ->
-            print_cli("{start_game/1} starting game id=~s", [binary:encode_hex(GameId)]),
+            print_cli("{start_game/1} starting game id=~s", [GameId]),
             supervisor:start_child(?MODULE, [GameId]);
 
         % game found, so conflict on GameId
         {ok, _} ->
-            print_cli("{start_game/1} game id=~s already exists", [binary:encode_hex(GameId)]),
+            print_cli("{start_game/1} game id=~s already exists", [GameId]),
             {error, already_exists}
     end.
 
@@ -145,7 +145,7 @@ start_game(GameId) ->
 %%% lookup pid in ETS, then asks the supervisor to terminate that child. 
 %%% The game process will run its terminate/2 callback, which unregisters it from ETS.
 stop_game(GameId, Stats) ->
-    print_cli("{stop_game/1} Request to stop game_id=~s", [binary:encode_hex(GameId)]),
+    print_cli("{stop_game/1} Request to stop game_id=~s", [GameId]),
 
     % perform TES lookup of GameId
     case lookup(GameId) of
@@ -165,7 +165,7 @@ stop_game(GameId, Stats) ->
             unregister_game(GameId),
 
             % return ok
-            print_cli("{stop_game/1} Game_id=~s stopped", [binary:encode_hex(GameId)]),
+            print_cli("{stop_game/1} Game_id=~s stopped", [GameId]),
             ok;
 
         % if not found, print to log and return error
@@ -213,12 +213,12 @@ lookup(GameId) ->
 %%% GameId: the game identifier
 %%% Pid:    the pid of the game process (self() of the game prcess)
 register_game(GameId, Pid) ->
-    print_cli("{register_game/2} game=~s pid=~p", [binary:encode_hex(GameId), Pid]),
+    print_cli("{register_game/2} game=~s pid=~p", [GameId, Pid]),
     ets:insert(?GAME_PROC_TABLE, {GameId, Pid}).
 
 
 %%% Remove game from the table.
 %%% Called by egs_game_module:terminate/2 when the game process is shutting down.
 unregister_game(GameId) ->
-    print_cli("{unregister_game/1} game=~s", [binary:encode_hex(GameId)]),
+    print_cli("{unregister_game/1} game=~s", [GameId]),
     ets:delete(?GAME_PROC_TABLE, GameId).

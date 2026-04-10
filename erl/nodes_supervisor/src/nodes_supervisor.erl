@@ -118,15 +118,15 @@ handle_call({new_lobby_req, ReqId, {}}, _From, State) ->
     
     {Reply, NewState} = start_game_logic(State),
 
-    {reply, {join_lobby_resp, ReqId, {Reply}}, NewState};
+    {reply, {new_lobby_resp, ReqId, Reply}, NewState};
 
 
-handle_call({join_lobby_req, ReqId, {Token, PlayerId, GameId}}, _From, State) ->
+handle_call({join_lobby_req, ReqId, {PlayerId, GameId, Token}}, _From, State) ->
     print_cli("[JAVA-REQ] join_lobby_req received by JAVA: \nReqId=~p \nToken=~p, PlayerId=~p, GameId=~p", [ReqId, Token, PlayerId, GameId]),
 
     {Reply, NewState} = token_auth_logic(Token, PlayerId, GameId, State),
     
-    {reply, {join_lobby_resp, ReqId, {Reply}}, NewState};
+    {reply, {join_lobby_resp, ReqId, Reply}, NewState};
 
 handle_call(_Req, _From, State) ->
     %% Default for unknown calls
@@ -143,7 +143,7 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
 
         %% game GameId not present
         error ->
-            print_cli("{game_temrinated} game ~s not found", [binary:encode_hex(GameId)]),
+            print_cli("{game_temrinated} game ~s not found", [GameId]),
             {reply, {error, not_found}, State};
 
         {ok, TargetNode} ->
@@ -158,7 +158,7 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
             %% NOTE: i dont know how to model a req_id -> im just using GameId as req_id
             {springboot_mbox, ?JAVA_NODE} ! {self(), stats_req, GameId, {Stats}},
 
-            print_cli("Game ~s stopped, tables updated \nStats: ~p", [binary:encode_hex(GameId), Stats]),
+            print_cli("Game ~s stopped, tables updated \nStats: ~p", [GameId, Stats]),
 
             {noreply, NewState}
     end;
@@ -218,10 +218,10 @@ start_game_logic(State) ->
 
                     print_cli(
                         "Game ~s successfully started on ~p",
-                        [binary:encode_hex(GameId), TargetNode]
+                        [GameId, TargetNode]
                     ),
 
-                    {{ok, extract_ip(TargetNode), ?WS_PORT, GameId}, NewState};
+                    {{ok, extract_ip(TargetNode), ?WS_PORT, binary_to_list(GameId)}, NewState};
 
                 %% rpc bad call
                 Reason ->
@@ -234,19 +234,19 @@ start_game_logic(State) ->
     end.
 
 
-token_auth_logic(Token, PlayerId, GameId, State) ->
+token_auth_logic(Token, PlayerId, GameIdList, State) ->
+    GameId = (list_to_binary(GameIdList)),
+    print_cli("DEBUG: Looking for GameId hex ~p", [GameIdList]),
+    print_cli("DEBUG: Keys in map: ~p", [maps:keys(State#state.game_proc)]),
     %% control wheter the game with id=GameId actually exists
     case maps:find(GameId, State#state.game_proc) of
 
         %% no existing game
         error ->
-            print_cli(
-                "{token_auth} game ~s not found",
-                [binary:encode_hex(GameId)]
-            ),
+            print_cli("{token_auth} game ~s not found", [GameId]),
             {{error, not_found}, State};
 
-        {ok, TargetNode} ->
+        {ok, {TargetNode, X}} ->
             %% communicate to node TargetNode the new token (ie a new client that can play)
             case rpc:call(
                 TargetNode,
@@ -277,8 +277,8 @@ get_games_list_logic(State) ->
 %%% ============================================================
 
 generate_game_id() ->
-    %% Generate a secure random 32-byte GameId
-    crypto:strong_rand_bytes(32).
+    Bytes = crypto:strong_rand_bytes(16),
+    binary:encode_hex(Bytes).
 
 
 find_least_loaded_node(NodeLoad) when map_size(NodeLoad) =:= 0 ->
