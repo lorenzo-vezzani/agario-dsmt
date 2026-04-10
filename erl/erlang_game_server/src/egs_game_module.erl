@@ -129,7 +129,7 @@ terminate(_Reason, State) ->
 
     Stats = maps:get(?STATE_STATS, State),
     Balls = maps:get(?STATE_BALL, State),
-    Payload = egs_game_module_utils:encode__gameover(Stats, Balls)
+    Payload = egs_game_module_utils:encode__gameover(Stats, Balls),
     
     % Notify the remote central supervisor
     gen_server:cast(

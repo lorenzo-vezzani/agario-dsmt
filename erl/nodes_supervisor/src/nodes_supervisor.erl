@@ -298,9 +298,10 @@ find_least_loaded_node(NodeLoad) ->
     {ok, Node}.
 
 extract_ip(Name) ->
-    case string:split(Name, "@") of
-        [_, IP] -> IP; 
-        _ -> Name 
+    NameStr = atom_to_list(Name),
+    case string:split(NameStr, "@", all) of
+        [_, IP] -> IP;
+        _ -> NameStr
     end.
 
 print_cli(Text, Args) ->
