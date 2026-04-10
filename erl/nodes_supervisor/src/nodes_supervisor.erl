@@ -1,3 +1,6 @@
+%%% todo add a n_player field to game proc map
+%%% return game process list as [{ip_addr, port, lobby_id, n_players}, ...]
+
 %%%-------------------------------------------------------------------
 %% @doc nodes_supervisor as a gen_server
 %% Manages node load balancing and game registry
@@ -27,7 +30,7 @@
 
 %% Internal state of the gen_server
 -record(state, {
-    %% Mapping GameId => NodeId
+    %% Mapping GameId => {NodeId, n_players}
     game_proc  :: map(),
     %% Mapping NodeId => number of active games
     node_load  :: map()
@@ -102,8 +105,12 @@ handle_call({get_lobbies_req, ReqId, {}}, _From, State) ->
     {Reply, NewState} = get_games_list_logic(State),
 
     GameList = maps:to_list(Reply),
+    FormattedGameList = lists:map(
+        fun({GameId, {NodeId, NPlayers}}) -> {extract_ip(NodeId), ?WS_PORT, GameId, NPlayers} end, 
+        GameList
+    ),
     
-    {reply, {get_lobbies_resp, ReqId, {ok, GameList}}, NewState};
+    {reply, {get_lobbies_resp, ReqId, {ok, FormattedGameList}}, NewState};
 
 
 handle_call({new_lobby_req, ReqId, {}}, _From, State) ->
@@ -111,7 +118,7 @@ handle_call({new_lobby_req, ReqId, {}}, _From, State) ->
     
     {Reply, NewState} = start_game_logic(State),
 
-    {reply, {join_lobby_resp, ReqId, Reply}, NewState};
+    {reply, {join_lobby_resp, ReqId, {Reply}}, NewState};
 
 
 handle_call({join_lobby_req, ReqId, {Token, PlayerId, GameId}}, _From, State) ->
@@ -119,7 +126,7 @@ handle_call({join_lobby_req, ReqId, {Token, PlayerId, GameId}}, _From, State) ->
 
     {Reply, NewState} = token_auth_logic(Token, PlayerId, GameId, State),
     
-    {reply, {join_lobby_resp, ReqId, Reply}, NewState};
+    {reply, {join_lobby_resp, ReqId, {Reply}}, NewState};
 
 handle_call(_Req, _From, State) ->
     %% Default for unknown calls
@@ -156,6 +163,14 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
             {noreply, NewState}
     end;
 
+handle_cast({join_completed, GameId}, State) ->
+    %% incrementing player count for game=GameId
+    NewGameProc =
+        maps:update_with(GameId, fun({NodeId, NPlayers}) -> {NodeId, NPlayers + 1} end, State#state.game_proc),
+
+    NewState = State#state{ game_proc = NewGameProc, node_load = State#state.node_load },
+    {noreply, NewState};
+
 handle_cast(_Msg, State) -> {noreply, State}.
 
 %%% ===============================================================
@@ -188,7 +203,7 @@ start_game_logic(State) ->
                 {ok, Pid} ->
                     %% updating internal state
                     NewGameProc =
-                        maps:put(GameId, TargetNode, State#state.game_proc),
+                        maps:put(GameId, {TargetNode, 0}, State#state.game_proc),
 
                     NewNodeLoad =
                         maps:update_with(TargetNode,
@@ -206,7 +221,7 @@ start_game_logic(State) ->
                         [binary:encode_hex(GameId), TargetNode]
                     ),
 
-                    {ok, NewState};
+                    {{ok, extract_ip(TargetNode), ?WS_PORT, GameId}, NewState};
 
                 %% rpc bad call
                 Reason ->
@@ -241,7 +256,7 @@ token_auth_logic(Token, PlayerId, GameId, State) ->
             ) of
 
                 ok ->
-                    {ok, State};
+                    {{ok}, State};
 
                 %% rpc bad call
                 Reason ->
@@ -282,6 +297,11 @@ find_least_loaded_node(NodeLoad) ->
     ),
     {ok, Node}.
 
+extract_ip(Name) ->
+    case string:split(Name, "@") of
+        [_, IP] -> IP; 
+        _ -> Name 
+    end.
 
 print_cli(Text, Args) ->
     %% Print messages with supervisor prefix
