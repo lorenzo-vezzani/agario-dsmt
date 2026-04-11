@@ -161,9 +161,10 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
 
             %% sending stats to java node (converted to string)
             %% NOTE: i dont know how to model a req_id -> im just using GameId as req_id
-            {springboot_mbox, ?JAVA_NODE} ! {stats_req, binary_to_list(GameId), {binary_to_list(Stats)}},
+            %% why bro they aren't even the same type
+            gen_server:call({springboot_mbox, ?JAVA_NODE}, {stats_req, 100, {binary_to_list(Stats)}}),
 
-            print_cli("{game_temrinated} Game ~s stopped, tables updated \nStats: ~p", [GameId, Stats]),
+            print_cli("{game_terminated} Game ~s stopped, tables updated \nStats: ~p", [GameId, Stats]),
 
             {noreply, NewState}
     end;
