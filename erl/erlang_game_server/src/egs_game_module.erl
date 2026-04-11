@@ -191,6 +191,7 @@ complete_auth(PlayerId, ClientMap, State) ->
 
         % Not enough data (es token missing), just keep state
         _ ->
+            print_cli("{complete_auth} player=~s Missing data", [PlayerId]),
             {noreply, State}
     end.
 
@@ -482,8 +483,19 @@ token_auth_client(GameId, PlayerId, Token) ->
 
 token_auth_supervisor(GameId, PlayerId, Token) ->
     print_cli("{token_auth_supervisor/3} game=~s player=~s", [GameId, PlayerId]),
+
+    % Force binary conversion
+    TokenBinary = if
+        is_list(Token) -> list_to_binary(Token);
+        is_binary(Token) -> Token
+    end,
+    PlayerIdBinary = if
+        is_list(PlayerId) -> list_to_binary(PlayerId);
+        is_binary(PlayerId) -> PlayerId
+    end,
+
     case egs_supervisor:lookup(GameId) of
-        {ok, Pid} -> gen_server:cast(Pid, {token, PlayerId, Token, ?TOKEN_TYPE_SUP});
+        {ok, Pid} -> gen_server:cast(Pid, {token, PlayerIdBinary, TokenBinary, ?TOKEN_TYPE_SUP});
         Err -> Err
     end.
 
@@ -511,7 +523,6 @@ player_rejoin(GameId, PlayerId) ->
 %%% Send a raw browser message to the game process
 %%% Parsing of message is inside handle_cast
 player_input(GameId, PlayerId, Msg) ->
-    print_cli("{player_input/2} game=~s player=~s", [GameId, PlayerId]),
     case egs_supervisor:lookup(GameId) of
         {ok, Pid} -> gen_server:cast(Pid, {player_input, PlayerId, Msg});
         Err -> Err
