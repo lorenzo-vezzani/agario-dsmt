@@ -159,9 +159,9 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
                 node_load = NewNodeLoad
             },
 
-            %% sending stats to java node
+            %% sending stats to java node (converted to string)
             %% NOTE: i dont know how to model a req_id -> im just using GameId as req_id
-            {springboot_mbox, ?JAVA_NODE} ! {self(), stats_req, GameId, {Stats}},
+            {springboot_mbox, ?JAVA_NODE} ! {stats_req, GameId, {binary_to_list(Stats)}},
 
             print_cli("Game ~s stopped, tables updated \nStats: ~p", [GameId, Stats]),
 
