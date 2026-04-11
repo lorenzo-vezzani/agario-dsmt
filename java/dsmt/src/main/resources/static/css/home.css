@@ -1,52 +1,10 @@
-.link-btn {
-    width: 200px;
-    display: inline-block;
-    padding: 12px 18px;
-    border: 1px solid rgba(0, 229, 255, 0.4);
-    background: rgba(0, 229, 255, 0.03);
-    color: var(--accent);
-    font-family: 'Orbitron', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
+
+.panel .connect-btn {
+    display: block;
     text-decoration: none;
-    cursor: none;
-
-    position: relative;
-    overflow: hidden;
-
-    transition:
-            background 0.15s,
-            border-color 0.15s,
-            box-shadow 0.15s,
-            transform 0.05s;
+    text-align: center;
 }
 
-.link-btn::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(0, 229, 255, 0.08),
-            transparent
-    );
-    transform: translateX(-100%);
-    transition: transform 0.4s;
-}
-
-.link-btn:hover::before {
-    transform: translateX(100%);
-}
-
-.link-btn:hover {
-    background: rgba(0, 229, 255, 0.08);
-    border-color: var(--accent);
-    box-shadow: var(--glow);
-}
-
-.link-btn:active {
-    transform: scale(0.96);
-    box-shadow: 0 0 10px var(--accent-glow);
+.panel .connect-btn + .connect-btn {
+    margin-top: 12px;
 }

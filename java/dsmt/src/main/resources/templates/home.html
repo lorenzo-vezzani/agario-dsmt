@@ -14,15 +14,20 @@
 <script th:src="@{/js/custom_pointer.js}" type="text/javascript"></script>
 
 <div class="main-box">
-    <div class="panel" style="text-align: center">
+    <div class="panel" style="text-align:center">
         <div class="logo">BallZ</div>
         <div class="subtitle">Balls Battle Royale</div>
 
-        <a href="/create" class="link-btn">Create new game</a>
-        <br>
-        <a href="join" class="link-btn">Join existing game</a>
-        <br>
-        <a href="statistics" class="link-btn">View your stats</a>
+        <a th:href="@{/create}" class="connect-btn">▶ Create new game</a>
+        <a th:href="@{/join}" class="connect-btn">▶ Join existing game</a>
+        <a th:href="@{/statistics}" class="connect-btn">▶ View your stats</a>
+
+        <form th:action="@{/logout}" method="post" style="margin-top:18px">
+            <button class="connect-btn"
+                    style="border-color:rgba(255,61,113,0.35);color:var(--red)">
+                ✕ Logout
+            </button>
+        </form>
     </div>
 </div>
 
