@@ -106,7 +106,7 @@ handle_call({get_lobbies_req, ReqId, {}}, _From, State) ->
 
     GameList = maps:to_list(Reply),
     FormattedGameList = lists:map(
-        fun({GameId, {NodeId, NPlayers}}) -> {extract_ip(NodeId), ?WS_PORT, GameId, NPlayers} end, 
+        fun({GameId, {NodeId, NPlayers}}) -> {extract_ip(NodeId), ?WS_PORT, binary_to_list(GameId), NPlayers} end, 
         GameList
     ),
     
@@ -161,9 +161,9 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
 
             %% sending stats to java node (converted to string)
             %% NOTE: i dont know how to model a req_id -> im just using GameId as req_id
-            {springboot_mbox, ?JAVA_NODE} ! {stats_req, GameId, {binary_to_list(Stats)}},
+            {springboot_mbox, ?JAVA_NODE} ! {stats_req, binary_to_list(GameId), {binary_to_list(Stats)}},
 
-            print_cli("Game ~s stopped, tables updated \nStats: ~p", [GameId, Stats]),
+            print_cli("{game_temrinated} Game ~s stopped, tables updated \nStats: ~p", [GameId, Stats]),
 
             {noreply, NewState}
     end;
@@ -172,6 +172,14 @@ handle_cast({join_completed, GameId}, State) ->
     %% incrementing player count for game=GameId
     NewGameProc =
         maps:update_with(GameId, fun({NodeId, NPlayers}) -> {NodeId, NPlayers + 1} end, State#state.game_proc),
+
+    NewState = State#state{ game_proc = NewGameProc, node_load = State#state.node_load },
+    {noreply, NewState};
+
+handle_cast({leave_completed, GameId}, State) ->
+    %% incrementing player count for game=GameId
+    NewGameProc =
+        maps:update_with(GameId, fun({NodeId, NPlayers}) -> {NodeId, NPlayers - 1} end, State#state.game_proc),
 
     NewState = State#state{ game_proc = NewGameProc, node_load = State#state.node_load },
     {noreply, NewState};
