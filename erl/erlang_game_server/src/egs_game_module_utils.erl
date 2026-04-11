@@ -38,10 +38,6 @@
 -define(FOOD_MARGIN, 10.0). % margin from border of a food at spawn
 
 
-%%% Module specific cli print
-print_cli(Text, Args) -> egs_utils:print_cli("GameUtils", Text, Args).
-
-
 %%% Spanw a new random ball
 %%% Used when a new player joins a game
 gl__spawn_random_ball() ->
@@ -455,7 +451,7 @@ encode__gameover(Stats, Balls) ->
 
     % [statistics] sort by kill (higher first), then by deaths (lower first)
     SortedStats = lists:sort(
-        fun({_IdA, StatsA}, {_IdB, StatsB}) ->
+        fun({IdA, StatsA}, {IdB, StatsB}) ->
 
             % Get kill counts
             Ka = maps:get(kills, StatsA),
@@ -476,8 +472,8 @@ encode__gameover(Stats, Balls) ->
                         true ->
 
                             % if player is dead at gameover put a radius = -1
-                            Ra = case maps:find(IdA, Balls) of {ok, B} -> maps:get(radius, B); error -> -1 end,
-                            Rb = case maps:find(IdB, Balls) of {ok, B} -> maps:get(radius, B); error -> -1 end,
+                            Ra = case maps:find(IdA, Balls) of {ok, Ba} -> maps:get(radius, Ba); error -> -1 end,
+                            Rb = case maps:find(IdB, Balls) of {ok, Bb} -> maps:get(radius, Bb); error -> -1 end,
                             Ra > Rb
                     end
             end
