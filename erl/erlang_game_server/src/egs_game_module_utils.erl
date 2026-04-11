@@ -356,7 +356,8 @@ decode__direction_update(Msg) ->
 %%% 
 %%% Output format: 
 %%%     {
-%%%         balls:[
+%%%         "type": "state",
+%%%         "balls":[
 %%%             {"id":"<player name 1>","x":<x val>,"y":<y val>,"r":<radius>},
 %%%             {"id":"<player name 2>","x":<x val>,"y":<y val>,"r":<radius>},
 %%%             ...,
@@ -418,6 +419,20 @@ encode__state(Balls, Food, Stats) ->
 
 %%% returns the encoding for the game termination
 %%% it includes the top 3 largest balls at the termination
+%%% Output format: 
+%%%     {
+%%%         "type": "gameover",
+%%%         "ordered_balls":[
+%%%             {"id":"<player name 1>","x":<x val>,"y":<y val>,"r":<radius>},
+%%%             {"id":"<player name 2>","x":<x val>,"y":<y val>,"r":<radius>},
+%%%             ...,
+%%%             {"id":"<player name n>","x":<x val>,"y":<y val>,"r":<radius>}
+%%%         ],
+%%%         "stats":[
+%%%             {"id":<player id>,"k":<kill count>,"d":<death count>},
+%%%             ...
+%%%         ]
+%%%     }
 encode__gameover(Stats, Balls) ->
 
     % [balls] sort ball by radius (bigger first in list)
@@ -517,37 +532,6 @@ encode__stats(PlayerId, PlayerStats) ->
         maps:get(kills, PlayerStats),
         maps:get(deaths, PlayerStats)
     ]).
-%%% returns the encoding for the game termination
-%%% it includes the top 3 largest balls at the termination
-encode__gameover(State) ->
-    Balls = maps:get(balls, State, #{}),
-
-    BallList = maps:to_list(Balls),
-
-    Sorted = lists:sort(
-        fun({_, BallA}, {_, BallB}) ->
-            float(maps:get(radius, BallA)) > float(maps:get(radius, BallB))
-        end,
-        BallList
-    ),
-
-    Top3 = lists:sublist(Sorted, 3),
-
-    Top3Json = lists:map(
-        fun({PlayerId, Ball}) ->
-            #{
-                player_id => PlayerId,
-                radius => maps:get(radius, Ball)
-            }
-        end,
-        Top3
-    ),
-
-    jsx:encode(#{
-        type => <<"gameover">>,
-        game_id => maps:get(game_id, State),
-        top3 => Top3Json
-    }).
 
 %%% ---------------------------
 %%% GENERAL UTILS

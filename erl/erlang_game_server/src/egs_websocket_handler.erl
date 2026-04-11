@@ -120,7 +120,6 @@ websocket_handle({text, Msg}, State) ->
     {ok, State};
 
 %% Separate handler for non-text messages
-%% TODO remove if not used (or just print empty error message, without printing the whole frame)
 websocket_handle(Frame, State) ->
     print_cli("{websocket_handle/2} received non-text frame: ~p", [Frame]),
     {ok, State}.

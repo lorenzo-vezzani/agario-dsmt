@@ -79,9 +79,6 @@ init([]) ->
         %      all are added dynamically at runtime with start_child/2
         strategy  => simple_one_for_one,
 
-        % TODO explain: is this restart strategy for the children or for this supervisor itself?
-        % TODO then explain restart strategy
-
         % intensity and period define the maximum restart frequency of the children controlled
         % children (games) are  temporary, so never restarted
         % we would just risk restarting a game in a non-consistent state
