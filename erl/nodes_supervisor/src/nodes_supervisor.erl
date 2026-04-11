@@ -144,15 +144,20 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
         %% game GameId not present
         error ->
             print_cli("{game_temrinated} game ~s not found", [GameId]),
-            {reply, {error, not_found}, State};
+            {noreply, State};
 
-        {ok, TargetNode} ->
+        {ok, {TargetNode, _PlayerCount}} ->
             %% Update internal state
             NewGameProc = maps:remove(GameId, State#state.game_proc),
-            NewNodeLoad = maps:update_with(TargetNode, fun(N) -> max(0, N - 1) end,
-                                           State#state.node_load),
-            NewState = State#state{game_proc = NewGameProc,
-                                   node_load = NewNodeLoad},
+            NewNodeLoad = maps:update_with(
+                TargetNode, 
+                fun(N) -> max(0, N - 1) end,
+                State#state.node_load
+            ),
+            NewState = State#state{
+                game_proc = NewGameProc,
+                node_load = NewNodeLoad
+            },
 
             %% sending stats to java node
             %% NOTE: i dont know how to model a req_id -> im just using GameId as req_id
@@ -200,7 +205,7 @@ start_game_logic(State) ->
             %% Contact the local supervisor of the node to start a new game with game-id=GameId
             case rpc:call(TargetNode, egs_supervisor, start_game, [GameId]) of
 
-                {ok, Pid} ->
+                {ok, _Pid} ->
                     %% updating internal state
                     NewGameProc =
                         maps:put(GameId, {TargetNode, 0}, State#state.game_proc),
@@ -236,8 +241,7 @@ start_game_logic(State) ->
 
 token_auth_logic(Token, PlayerId, GameIdList, State) ->
     GameId = (list_to_binary(GameIdList)),
-    print_cli("DEBUG: Looking for GameId hex ~p", [GameIdList]),
-    print_cli("DEBUG: Keys in map: ~p", [maps:keys(State#state.game_proc)]),
+    
     %% control wheter the game with id=GameId actually exists
     case maps:find(GameId, State#state.game_proc) of
 
@@ -246,7 +250,7 @@ token_auth_logic(Token, PlayerId, GameIdList, State) ->
             print_cli("{token_auth} game ~s not found", [GameId]),
             {{error, not_found}, State};
 
-        {ok, {TargetNode, X}} ->
+        {ok, {TargetNode, _PlayerCount}} ->
             %% communicate to node TargetNode the new token (ie a new client that can play)
             case rpc:call(
                 TargetNode,
