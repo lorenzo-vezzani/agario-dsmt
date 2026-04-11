@@ -5,8 +5,10 @@ import it.unipi.dsmt.config.AgarioConfig;
 import it.unipi.dsmt.dto.GameStatsDTO;
 import it.unipi.dsmt.dto.LobbyInfoDTO;
 import it.unipi.dsmt.dto.PlayerStatDTO;
+import it.unipi.dsmt.utils.GenServerUtils;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +17,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.data.util.Pair;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -159,64 +162,6 @@ public class ErlangSupervisorConnectionService {
         currentNode.close();
     }
 
-    /**
-     * Encapsulates the request in a message that gen_server supports
-     * @param request request to send to the supervisor
-     * @return message ready to send
-     */
-    private OtpErlangTuple buildGenServerCall(OtpErlangTuple request) {
-        // Ref
-        OtpErlangRef ref = currentNode.createRef();
-
-        // {FromPid, Ref}
-        OtpErlangTuple from = new OtpErlangTuple(new OtpErlangObject[] {
-                currentMbox.self(),
-                ref
-        });
-
-        // {'$gen_call', {FromPid, Ref}, Request}
-        OtpErlangObject[] msgArr = new OtpErlangObject[] {
-                new OtpErlangAtom("$gen_call"),
-                from,
-                request
-        };
-
-        return new OtpErlangTuple(msgArr);
-    }
-
-    private OtpErlangTuple extractGenServerResponse(OtpErlangTuple response) {
-        if (response.arity() != 2) {
-            logger.error("Incorrect number of arguments for gen_server_response: {}", response);
-            return null;
-        }
-
-        OtpErlangObject ref = response.elementAt(0);
-        OtpErlangObject reply = response.elementAt(1);
-
-        if (!(reply instanceof OtpErlangTuple)) {
-            logger.error("Incorrect response received: {}", reply);
-            return null;
-        }
-        return (OtpErlangTuple) reply;
-    }
-
-    /**
-     * Sends a single message with the correct format
-     * @param type type of the message
-     * @param requestId request id of the message
-     * @param content payload of the message
-     */
-    private void sendMessage(OtpErlangAtom type, int requestId, OtpErlangTuple content) {
-        OtpErlangTuple msg = new OtpErlangTuple(
-                new OtpErlangObject[]{
-                        type,
-                        new OtpErlangInt(requestId),
-                        content
-                }
-        );
-        OtpErlangTuple toSend = buildGenServerCall(msg);
-        currentMbox.send(agarioConfig.getSupervisorMb(), agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp(), toSend);
-    }
 
     /**
      * Processes a received message.
@@ -229,7 +174,27 @@ public class ErlangSupervisorConnectionService {
             return;
         }
 
-        OtpErlangTuple tuple = extractGenServerResponse((OtpErlangTuple) packet);
+        OtpErlangTuple msg = (OtpErlangTuple) packet;
+        OtpErlangTuple tuple = null;
+        OtpErlangObject ref = null;
+        if (msg.arity() == 2) {
+            // this is a gen_server response
+            tuple = GenServerUtils.extractGenServerResponse((OtpErlangTuple) packet);
+        }
+        else if (msg.arity() == 3) {
+            // this is a gen_server request
+            Pair<@NotNull OtpErlangObject, @NotNull OtpErlangTuple> data = GenServerUtils.extractGenServerRequest((OtpErlangTuple) packet);
+            if (data == null) {
+                return;
+            }
+            ref = data.getFirst();
+            tuple = data.getSecond();
+        }
+        else {
+            logger.error("invalid message received: {}", packet);
+            return;
+        }
+
         if (tuple == null) {
             return;
         }
@@ -244,7 +209,7 @@ public class ErlangSupervisorConnectionService {
         }
         // new stats arrived
         else if (type.equals("stats_req")) {
-            processStats(req_id, content);
+            processStats(ref, req_id, content);
         }
         // unknown message received
         else {
@@ -293,7 +258,7 @@ public class ErlangSupervisorConnectionService {
      * @param req_id request ID contained in the received request
      * @param content content in the received request (the stats)
      */
-    private void processStats(int req_id, OtpErlangTuple content) {
+    private void processStats(OtpErlangObject ref, int req_id, OtpErlangTuple content) {
         logger.info("New stats received!");
 
         OtpErlangString erlangJson = (OtpErlangString) content.elementAt(0);
@@ -308,7 +273,24 @@ public class ErlangSupervisorConnectionService {
         }
 
         OtpErlangTuple result = new OtpErlangTuple(new OtpErlangAtom("ok"));
-        sendMessage(new OtpErlangAtom("stats_resp"), req_id, result);
+        OtpErlangTuple msg = buildMessage(new OtpErlangAtom("stats_resp"), req_id, result);
+        OtpErlangTuple toSend = GenServerUtils.buildGenServerCallResponse(ref, msg);
+
+        currentMbox.send(
+                agarioConfig.getSupervisorMb(),
+                agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp(),
+                toSend
+        );
+    }
+
+    private OtpErlangTuple buildMessage(OtpErlangAtom type, int requestId, OtpErlangTuple content) {
+        return new OtpErlangTuple(
+                new OtpErlangObject[]{
+                        type,
+                        new OtpErlangInt(requestId),
+                        content
+                }
+        );
     }
 
     /**
@@ -318,14 +300,20 @@ public class ErlangSupervisorConnectionService {
      * @param content erlang tuple with the payload
      * @return tuple found in the response message (null for timeout)
      */
-    private OtpErlangTuple sendRequest(OtpErlangAtom type, OtpErlangTuple content) {
+    private OtpErlangTuple sendGenServerCallRequest(OtpErlangAtom type, OtpErlangTuple content) {
         // create pending request
         CompletableFuture<OtpErlangTuple> future = new CompletableFuture<>();   // create future
         int requestId = nextRequestId.getAndIncrement();                        // extract request id to use
         pendingRequests.put(requestId, future);                                 // insert future in pending requests
 
-        // send request
-        sendMessage(type, requestId, content);
+        // build and send request
+        OtpErlangTuple msg = buildMessage(type, requestId, content);
+        OtpErlangTuple toSend = GenServerUtils.buildGenServerCallRequest(currentNode, currentMbox, msg);
+        currentMbox.send(
+                agarioConfig.getSupervisorMb(),
+                agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp(),
+                toSend
+        );
 
         try {
             // wait for response
@@ -370,7 +358,7 @@ public class ErlangSupervisorConnectionService {
      */
     public LobbyInfoDTO sendCreateLobbyRequest() {
         OtpErlangTuple payload = new OtpErlangTuple(new OtpErlangObject[]{});
-        OtpErlangTuple response = sendRequest(new OtpErlangAtom("new_lobby_req"), payload);
+        OtpErlangTuple response = sendGenServerCallRequest(new OtpErlangAtom("new_lobby_req"), payload);
 
         if (response == null) {
             logger.error("sendCreateLobbyRequest: Error sending create lobby request to supervisor");
@@ -381,7 +369,7 @@ public class ErlangSupervisorConnectionService {
         OtpErlangLong port = (OtpErlangLong) response.elementAt(2);
         OtpErlangString lobbyId = (OtpErlangString) response.elementAt(3);
 
-        if (!result.toString().equals("ok")) {
+        if (!result.atomValue().equals("ok")) {
             // TODO HANDLE ERROR CASES
             logger.error("sendCreateLobbyRequest: Supervisor returned error code after create lobby request");
             return null;
@@ -411,7 +399,7 @@ public class ErlangSupervisorConnectionService {
                 new OtpErlangString(lobbyId),
                 new OtpErlangString(token)
         });
-        OtpErlangTuple response = sendRequest(new OtpErlangAtom("join_lobby_req"), payload);
+        OtpErlangTuple response = sendGenServerCallRequest(new OtpErlangAtom("join_lobby_req"), payload);
 
         if (response == null) {
             logger.error("sendJoinLobbyRequest: Error sending join lobby request to supervisor");
@@ -419,7 +407,7 @@ public class ErlangSupervisorConnectionService {
         }
         OtpErlangAtom result = (OtpErlangAtom) response.elementAt(0);
 
-        if (!result.toString().equals("ok")) {
+        if (!result.atomValue().equals("ok")) {
             // TODO HANDLE ERROR CASES
             logger.error("sendJoinLobbyRequest: Supervisor returned error code after join lobby request");
             return false;
@@ -430,7 +418,7 @@ public class ErlangSupervisorConnectionService {
 
     public List<LobbyInfoDTO> sendListLobbyRequest() {
         OtpErlangTuple payload = new OtpErlangTuple(new OtpErlangObject[]{});
-        OtpErlangTuple response = sendRequest(new OtpErlangAtom("get_lobbies_req"), payload);
+        OtpErlangTuple response = sendGenServerCallRequest(new OtpErlangAtom("get_lobbies_req"), payload);
 
         if  (response == null) {
             logger.error("sendListLobbyRequest: Error sending get lobbies request to supervisor");
@@ -439,7 +427,7 @@ public class ErlangSupervisorConnectionService {
         OtpErlangAtom result = (OtpErlangAtom) response.elementAt(0);
         OtpErlangList lobbies = (OtpErlangList) response.elementAt(1);
 
-        if (!result.toString().equals("ok")) {
+        if (!result.atomValue().equals("ok")) {
             // TODO HANDLE ERROR CASES
             logger.error("sendListLobbyRequest: Supervisor returned error code after get lobbies request");
             return null;
