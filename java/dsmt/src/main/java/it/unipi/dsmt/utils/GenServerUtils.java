@@ -15,7 +15,7 @@ public class GenServerUtils {
      * @param currentNode sender's node
      * @param currentMbox sender's mbox
      * @param body request's body
-     * @return message to send
+     * @return message ready to send
      */
     public static OtpErlangTuple buildGenServerCallRequest(OtpNode currentNode, OtpMbox currentMbox, OtpErlangTuple body) {
         // Ref
@@ -37,6 +37,12 @@ public class GenServerUtils {
         return new OtpErlangTuple(msgArr);
     }
 
+    /**
+     * Builds the response to send to a gen_server:call
+     * @param remote reference of the node who sent the request
+     * @param response body of the response
+     * @return message ready to send
+     */
     public static OtpErlangTuple buildGenServerCallResponse(OtpErlangObject remote, OtpErlangTuple response) {
         return new OtpErlangTuple(new OtpErlangObject[] {
                 remote,
@@ -44,22 +50,11 @@ public class GenServerUtils {
         });
     }
 
-    public static OtpErlangTuple extractGenServerResponse(OtpErlangTuple response) {
-        if (response.arity() != 2) {
-            logger.error("Incorrect number of arguments for gen_server_response: {}", response);
-            return null;
-        }
-
-        OtpErlangObject ref = response.elementAt(0);
-        OtpErlangObject body = response.elementAt(1);
-
-        if (!(body instanceof OtpErlangTuple)) {
-            logger.error("Incorrect response received: {}", body);
-            return null;
-        }
-        return (OtpErlangTuple) body;
-    }
-
+    /**
+     * Extracts the node reference (so that can be used for the response) and the body from a gen_server:call request
+     * @param request received request
+     * @return content of the request
+     */
     public static Pair<@NotNull OtpErlangObject, @NotNull OtpErlangTuple> extractGenServerRequest(OtpErlangTuple request) {
         if (request.arity() != 3) {
             logger.error("Incorrect number of arguments for gen_server_request: {}", request);
@@ -91,5 +86,26 @@ public class GenServerUtils {
         OtpErlangObject ref = refTuple.elementAt(1);
 
         return Pair.of(ref, (OtpErlangTuple) body);
+    }
+
+    /**
+     * Extracts the content of a gen_server response
+     * @param response what the gen_server responded
+     * @return content of the response
+     */
+    public static OtpErlangTuple extractGenServerResponse(OtpErlangTuple response) {
+        if (response.arity() != 2) {
+            logger.error("Incorrect number of arguments for gen_server_response: {}", response);
+            return null;
+        }
+
+        OtpErlangObject ref = response.elementAt(0);
+        OtpErlangObject body = response.elementAt(1);
+
+        if (!(body instanceof OtpErlangTuple)) {
+            logger.error("Incorrect response received: {}", body);
+            return null;
+        }
+        return (OtpErlangTuple) body;
     }
 }

@@ -283,6 +283,13 @@ public class ErlangSupervisorConnectionService {
         );
     }
 
+    /**
+     * Builds the message to be inserted as content of requests/responses
+     * @param type message type
+     * @param requestId request ID to be used
+     * @param content content of the message
+     * @return message to be encapsulated into a gen_server request or response
+     */
     private OtpErlangTuple buildMessage(OtpErlangAtom type, int requestId, OtpErlangTuple content) {
         return new OtpErlangTuple(
                 new OtpErlangObject[]{
@@ -370,7 +377,6 @@ public class ErlangSupervisorConnectionService {
         OtpErlangString lobbyId = (OtpErlangString) response.elementAt(3);
 
         if (!result.atomValue().equals("ok")) {
-            // TODO HANDLE ERROR CASES
             logger.error("sendCreateLobbyRequest: Supervisor returned error code after create lobby request");
             return null;
         }
@@ -408,7 +414,6 @@ public class ErlangSupervisorConnectionService {
         OtpErlangAtom result = (OtpErlangAtom) response.elementAt(0);
 
         if (!result.atomValue().equals("ok")) {
-            // TODO HANDLE ERROR CASES
             logger.error("sendJoinLobbyRequest: Supervisor returned error code after join lobby request");
             return false;
         }
@@ -428,7 +433,6 @@ public class ErlangSupervisorConnectionService {
         OtpErlangList lobbies = (OtpErlangList) response.elementAt(1);
 
         if (!result.atomValue().equals("ok")) {
-            // TODO HANDLE ERROR CASES
             logger.error("sendListLobbyRequest: Supervisor returned error code after get lobbies request");
             return null;
         }
