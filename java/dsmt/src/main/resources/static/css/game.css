@@ -209,7 +209,7 @@
 /* Header row */
 .lb-header {
     display: grid;
-    grid-template-columns: 28px 1fr 36px 36px;
+    grid-template-columns: 28px 1fr 44px 36px 36px;
     gap: 0;
     padding: 7px 12px;
     border-bottom: 1px solid var(--border);
@@ -224,7 +224,7 @@
 /* Data rows */
 .lb-row {
     display: grid;
-    grid-template-columns: 28px 1fr 36px 36px;
+    grid-template-columns: 28px 1fr 44px 36px 36px;
     gap: 0;
     padding: 8px 12px;
     border-bottom: 1px solid rgba(30, 42, 58, 0.5);
@@ -262,3 +262,9 @@
     border-color: var(--red) !important;
     box-shadow: var(--glow-red) !important;
 }
+
+.lb-r { color: var(--accent-dim); text-align: right; font-size: 0.75rem; }
+
+/* Dead players */
+.lb-row.lb-dead { opacity: 0.42; }
+.lb-row.lb-dead .lb-name { text-decoration: line-through; }
