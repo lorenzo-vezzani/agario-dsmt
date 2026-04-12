@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>BallZ – Stats</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+    <link th:href="@{/css/general.css}" type="text/css" rel="stylesheet"/>
+    <link th:href="@{/css/statistics.css}" type="text/css" rel="stylesheet"/>
     <style>
         :root {
             --bg:        #080b10;
@@ -319,27 +321,27 @@
 
 <div class="page">
 
-    <!-- ── Header ── -->
+    <!--header -->
     <header class="header">
         <div class="logo">BallZ</div>
         <div class="subtitle">BallZone Battle Royale</div>
         <div class="player-tag">PLAYER // <span th:text="${stats.username()}">USERNAME</span></div>
     </header>
 
-    <!-- ── Partite ── -->
+    <!--Games -->
     <div class="section-label">Partite</div>
     <div class="big-stats">
         <div class="stat-card">
             <div class="stat-value" th:text="${stats.gamesPlayed()}">0</div>
-            <div class="stat-label">Giocate</div>
+            <div class="stat-label">Played</div>
         </div>
         <div class="stat-card">
             <div class="stat-value" th:text="${stats.gamesWon()}">0</div>
-            <div class="stat-label">Vittorie</div>
+            <div class="stat-label">Wins</div>
         </div>
         <div class="stat-card danger">
             <div class="stat-value" th:text="${stats.gamesLost()}">0</div>
-            <div class="stat-label">Sconfitte</div>
+            <div class="stat-label">Losses</div>
         </div>
         <div class="stat-card warn">
             <div class="stat-value" th:text="${stats.dotsEaten()}">0</div>
@@ -347,12 +349,12 @@
         </div>
         <div class="stat-card danger">
             <div class="stat-value" th:text="${stats.deaths()}">0</div>
-            <div class="stat-label">Morti</div>
+            <div class="stat-label">Deaths</div>
         </div>
     </div>
 
-    <!-- ── Percentuali ── -->
-    <div class="section-label" style="margin-top:40px">Percentuali</div>
+    <!--Percentages -->
+    <div class="section-label" style="margin-top:40px">Percentages</div>
     <div class="bars-row">
         <div class="bar-card">
             <div class="bar-header">
@@ -378,15 +380,15 @@
         </div>
     </div>
 
-    <!-- ── Medie ── -->
-    <div class="section-label" style="margin-top:40px">Medie per partita</div>
+    <!--Averages -->
+    <div class="section-label" style="margin-top:40px">Averages per game</div>
     <div class="avg-row">
         <div class="avg-card">
             <div class="avg-icon">⚡</div>
             <div class="avg-info">
                 <div class="avg-value"
                      th:text="${#numbers.formatDecimal(stats.avgKillsPerGame(), 1, 2)}">0.00</div>
-                <div class="avg-label">Kills / partita</div>
+                <div class="avg-label">Kills / game</div>
             </div>
         </div>
         <div class="avg-card">
@@ -394,24 +396,24 @@
             <div class="avg-info">
                 <div class="avg-value"
                      th:text="${#numbers.formatDecimal(stats.avgDeathsPerGame(), 1, 2)}">0.00</div>
-                <div class="avg-label">Morti / partita</div>
+                <div class="avg-label">Deaths / game</div>
             </div>
         </div>
     </div>
 
-    <!-- ── Meta ── -->
+    <!--Other info -->
     <div class="section-label">Account</div>
     <div class="meta-row">
         <div class="meta-chip">
             Email // <strong th:text="${stats.email()}">—</strong>
         </div>
         <div class="meta-chip">
-            Membro dal //
+            Account created //
             <strong th:text="${#temporals.format(stats.createdAt(), 'dd MMM yyyy')}">—</strong>
         </div>
     </div>
 
-    <a class="back-link" th:href="@{/home}">Torna alla home</a>
+    <a class="back-link" th:href="@{/home}">Back to Home</a>
 
 </div>
 

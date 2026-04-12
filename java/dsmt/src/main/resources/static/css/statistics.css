@@ -1,0 +1,240 @@
+/* statistics.css — depends on general.css */
+
+/* ── Alias variables not in general.css ── */
+:root {
+    --panel:   var(--panel-bg);
+    --muted:   var(--text-muted);
+    --accent2: var(--red);
+    --accent3: var(--warn);
+    --glow2:   var(--glow-red);
+}
+
+/* ── Body override: questa pagina è scrollabile, non fixed ── */
+html, body {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+    overflow-x: hidden;
+}
+
+/* ── Grid background via ::after (general usa background-image su body) ── */
+body::after {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+            linear-gradient(rgba(0,229,255,.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,229,255,.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+}
+
+/* ── Logo override (font-size diverso da general) ── */
+.logo {
+    font-size: clamp(2.4rem, 7vw, 4rem);
+    letter-spacing: .12em;
+}
+
+/* ── Subtitle override (no margin-bottom, l'header ha il suo) ── */
+.subtitle { margin-bottom: 0; }
+
+/* ── Layout ── */
+.page {
+    position: relative; z-index: 1;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+}
+
+/* ── Header ── */
+.header {
+    text-align: center;
+    margin-bottom: 56px;
+}
+
+.player-tag {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 6px 20px;
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    font-size: .85rem;
+    color: var(--accent);
+    letter-spacing: .15em;
+    box-shadow: var(--glow);
+}
+.player-tag span { color: #fff; }
+
+/* ── Section label ── */
+.section-label {
+    font-family: 'Orbitron', monospace;
+    font-size: .65rem;
+    letter-spacing: .4em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px;
+}
+.section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+/* ── Stat cards ── */
+.big-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 2px;
+}
+
+.stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 28px 20px 22px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .25s, transform .2s;
+    cursor: default;
+}
+.stat-card:hover         { border-color: var(--accent); transform: translateY(-3px); }
+.stat-card.danger:hover  { border-color: var(--accent2); }
+.stat-card.warn:hover    { border-color: var(--accent3); }
+
+.stat-card::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(0,229,255,.05) 0%, transparent 60%);
+    opacity: 0;
+    transition: opacity .25s;
+}
+.stat-card:hover::before          { opacity: 1; }
+.stat-card.danger::before { background: linear-gradient(135deg, rgba(255,61,113,.05) 0%, transparent 60%); }
+.stat-card.warn::before   { background: linear-gradient(135deg, rgba(255,230,0,.05) 0%, transparent 60%); }
+
+.stat-value {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+}
+.stat-card:hover .stat-value        { color: var(--accent);  text-shadow: var(--glow); }
+.stat-card.danger:hover .stat-value { color: var(--accent2); text-shadow: var(--glow2); }
+.stat-card.warn:hover .stat-value   { color: var(--accent3); }
+
+.stat-label {
+    font-size: .65rem;
+    letter-spacing: .25em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 8px;
+}
+
+/* ── Progress bars ── */
+.bars-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    margin-top: 2px;
+}
+@media (max-width: 520px) { .bars-row { grid-template-columns: 1fr; } }
+
+.bar-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 22px 24px;
+}
+.bar-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px;
+}
+.bar-name {
+    font-size: .7rem;
+    letter-spacing: .2em;
+    color: var(--muted);
+    text-transform: uppercase;
+}
+.bar-pct {
+    font-family: 'Orbitron', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+}
+.bar-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s cubic-bezier(.4,0,.2,1);
+}
+.bar-fill.win  { background: linear-gradient(90deg, var(--accent), #00fff7); box-shadow: 0 0 8px var(--accent); }
+.bar-fill.loss { background: linear-gradient(90deg, var(--accent2), #ff7ba5); box-shadow: 0 0 8px var(--accent2); }
+
+/* ── Averages ── */
+.avg-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    margin-top: 2px;
+    margin-bottom: 40px;
+}
+@media (max-width: 520px) { .avg-row { grid-template-columns: 1fr; } }
+
+.avg-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.avg-icon  { font-size: 1.8rem; flex-shrink: 0; }
+.avg-info  { flex: 1; }
+.avg-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #fff;
+}
+.avg-label {
+    font-size: .62rem;
+    letter-spacing: .22em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 3px;
+}
+
+/* ── Meta chips ── */
+.meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 40px;
+}
+.meta-chip {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 8px 16px;
+    font-size: .7rem;
+    letter-spacing: .15em;
+    color: var(--muted);
+}
+.meta-chip strong { color: var(--text); }
+
+/* ── Entry animations ── */
+.stat-card, .bar-card, .avg-card { animation: slideUp .5s ease both; }
+.stat-card:nth-child(1) { animation-delay: .05s }
+.stat-card:nth-child(2) { animation-delay: .10s }
+.stat-card:nth-child(3) { animation-delay: .15s }
+.stat-card:nth-child(4) { animation-delay: .20s }
+.stat-card:nth-child(5) { animation-delay: .25s }
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
