@@ -66,6 +66,15 @@ get_games_list() ->
     gen_server:call(?SERVER, get_games_list).
 
 
+%% Synchronous call: returns {ok} or error if required node already exists
+register_node(NodeId) ->
+    gen_server:call(?SERVER, {register_node, NodeId}).
+
+
+%% Synchronous call: returns {ok, count-of-active-processes} or error if required node is not found
+unregister_node(NodeId) ->
+    gen_server:call(?SERVER, {unregister_node, NodeId}).
+
 %%% ============================================================
 %%%  Callbacks
 %%% ============================================================
@@ -83,6 +92,34 @@ init([]) ->
 handle_call({start_game}, _From, State) ->
     {Reply, NewState} = start_game_logic(State),
     {reply, Reply, NewState};
+
+handle_call({register_node, NodeId}, _From, State) ->
+    case maps:is_key(NodeId, State#state.node_load) of
+        true ->
+            {reply, {error, already_registered}, State};
+
+        false ->
+            NewNodeLoad = maps:put(NodeId, 0, State#state.node_load),
+            print_cli("Node ~p registered", [NodeId]),
+            {reply, ok, State#state{node_load = NewNodeLoad}}
+    end;
+
+handle_call({unregister_node, NodeId}, _From, State) ->
+    case maps:find(NodeId, State#state.node_load) of
+        %% node not found
+        error ->
+            {reply, {error, not_found}, State};
+
+        %% node found, but busy with games
+        {ok, Count} when Count > 0 ->
+            {reply, {error, node_busy}, State};
+        
+        %% node found
+        {ok, 0} ->
+            NewNodeLoad = maps:remove(NodeId, State#state.node_load),
+            print_cli("Node ~p unregistered", [NodeId]),
+            {reply, ok, State#state{node_load = NewNodeLoad}}
+    end;
 
 
 handle_call({token_auth, Token, PlayerId, GameId}, _From, State) ->
