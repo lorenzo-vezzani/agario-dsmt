@@ -20,7 +20,7 @@
 <!-- Always-visible mouse dot -->
 <div id="mouse-dot"></div>
 
-<!-- ═══ LOGIN SCREEN ════════════════════════════════════ -->
+<!-- Enter screen -->
 <div id="login-screen" class="main-box">
     <div class="panel">
 
@@ -85,14 +85,10 @@
                 ← Back to lobby
             </a>
         </div>
-
-        <form th:action="@{/logout}" method="post" class="logout-form">
-            <button type="submit" class="logout-btn">✕ Logout</button>
-        </form>
     </div>
 </div>
 
-<!-- ═══ GAME SCREEN ═════════════════════════════════════ -->
+<!-- In-game screen -->
 <div id="game-screen" class="main-box">
     <div class="hud" id="hud">
         <div class="hud-info">
@@ -102,7 +98,12 @@
             ZOOM <b id="hud-zoom-val">1.0x</b>
             &nbsp;<span id="hud-zoom-hint">Q- P+</span>
         </div>
-        <div class="hud-players">PLAYERS: <b id="hud-count">0</b></div>
+        <div class="hud-players">
+            PLAYERS:
+            <span><b id="hud-count-alive">0</b> Alive</span> //
+            <span><b id="hud-count-spec">0</b> Spec</span> //
+            <span><b id="hud-count-total">0</b> Total</span>
+        </div>
         <button class="quit-btn" id="quit-btn">✕ Quit</button>
     </div>
     <canvas id="arena-canvas"></canvas>

@@ -39,11 +39,14 @@ async function listUpdate() {
         for (let serverInfo of data) {
             let row = document.createElement("tr");
             let gameId = document.createElement("td");
+            let server = document.createElement("td");
             let players = document.createElement("td");
             let join = document.createElement("td");
             let joinButton = document.createElement("button");
 
-            gameId.innerText = serverInfo.lobbyId;
+            gameId.innerText = serverInfo.lobbyId.slice(0, 16) + '…';
+            gameId.title = serverInfo.lobbyId;
+            server.innerText = `${serverInfo.lobbyIp}:${serverInfo.lobbyPort}`;
             players.innerText = serverInfo.lobbyPlayers;
             joinButton.innerText = "Join";
             joinButton.classList.add("btn");
@@ -71,6 +74,7 @@ async function listUpdate() {
             join.appendChild(joinButton);
 
             row.appendChild(gameId);
+            row.appendChild(server);
             row.appendChild(players);
             row.appendChild(join);
             tbody.appendChild(row);
