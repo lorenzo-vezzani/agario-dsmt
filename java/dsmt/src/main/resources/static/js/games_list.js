@@ -44,7 +44,7 @@ async function listUpdate() {
             let join = document.createElement("td");
             let joinButton = document.createElement("button");
 
-            gameId.innerText = serverInfo.lobbyId.slice(0, 16) + '…';
+            gameId.innerText = serverInfo.lobbyId.slice(0, 8) + '…';
             gameId.title = serverInfo.lobbyId;
             server.innerText = `${serverInfo.lobbyIp}:${serverInfo.lobbyPort}`;
             players.innerText = serverInfo.lobbyPlayers;

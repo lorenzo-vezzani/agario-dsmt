@@ -43,6 +43,27 @@
     color: var(--text);
 }
 
+.table td:first-child,
+.table th:first-child {
+    max-width: 120px;
+}
+.table th:nth-child(3) {
+    text-align: right;
+    padding-right: 18px;
+}
+.table th:nth-child(4) {
+    display: none;
+}
+.table td:nth-child(3) {
+     text-align: right;
+     padding-right: 18px;
+ }
+.table td:nth-child(4) {
+      width: 1px;
+      white-space: nowrap;
+      padding-left: 8px;
+  }
+
 .table tbody tr { transition: background 0.15s; }
 .table tbody tr:last-child td { border-bottom: none; }
 
@@ -55,6 +76,23 @@
     letter-spacing: 0.18em;
     padding: 24px 14px;
     font-size: 0.72rem;
+}
+
+.table-wrapper {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.table-wrapper::-webkit-scrollbar { width: 4px; }
+.table-wrapper::-webkit-scrollbar-track { background: transparent; }
+.table-wrapper::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* thead sticky */
+.table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgba(8, 11, 16, 0.98);
 }
 
 /* ── Join button (reuses connect-btn logic, smaller) ── */
