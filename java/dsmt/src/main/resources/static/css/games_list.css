@@ -1,4 +1,6 @@
-
+.panel {
+    width: min(720px, 95vw);
+}
 .back-link {
     display: inline-block;
     margin-bottom: 24px;
@@ -43,26 +45,10 @@
     color: var(--text);
 }
 
-.table td:first-child,
-.table th:first-child {
-    max-width: 120px;
-}
-.table th:nth-child(3) {
-    text-align: right;
-    padding-right: 18px;
-}
-.table th:nth-child(4) {
-    display: none;
-}
-.table td:nth-child(3) {
-     text-align: right;
-     padding-right: 18px;
- }
-.table td:nth-child(4) {
-      width: 1px;
-      white-space: nowrap;
-      padding-left: 8px;
-  }
+.table th:nth-child(1), .table td:nth-child(1) { width: 35%; }   /* Game ID */
+.table th:nth-child(2), .table td:nth-child(2) { width: 30%; }   /* Server  */
+.table th:nth-child(3), .table td:nth-child(3) { width: 15%; }   /* Players */
+.table th:nth-child(4), .table td:nth-child(4) { width: 20%; }   /* Join    */
 
 .table tbody tr { transition: background 0.15s; }
 .table tbody tr:last-child td { border-bottom: none; }
