@@ -567,6 +567,7 @@ handle_info(tick, State) ->
     Clients = maps:get(?STATE_CLIENTS, State),
     Stats = maps:get(?STATE_STATS, State),
     Food = maps:get(?STATE_FOOD, State),
+    Ticks = maps:get(?STATE_TIME, State),
 
     % 1) move all balls
     BallsMoved = egs_game_module_utils:gl__move_balls(BallsInitial),
@@ -581,11 +582,16 @@ handle_info(tick, State) ->
     StatsUpdated = egs_game_module_utils:gl__update_stats(Stats, Collisions),
 
     % finally) Broadcast
-    Payload = egs_game_module_utils:encode__state(BallsAfterEating, FoodAfterEating, StatsUpdated),
+    Payload = egs_game_module_utils:encode__state(
+        BallsAfterEating, 
+        FoodAfterEating, 
+        StatsUpdated, 
+        Ticks * ?TICK_MS % tick count * (ms per single tick)
+    ),
     broadcast(Clients, game_state, Payload),
 
     % schedule next update
-    case maps:get(?STATE_TIME, State) < ?GAME_TIME_TICKS of
+    case Ticks < ?GAME_TIME_TICKS of
         true ->
             % reschedule state update and broadcast after TICK time - elapsed
             ElapsedMs = erlang:monotonic_time(millisecond) - StartTime,

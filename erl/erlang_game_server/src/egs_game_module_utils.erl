@@ -353,6 +353,7 @@ decode__direction_update(Msg) ->
 %%% Output format: 
 %%%     {
 %%%         "type": "state",
+%%%         "time_ms": <integer>
 %%%         "balls":[
 %%%             {"id":"<player name 1>","x":<x val>,"y":<y val>,"r":<radius>},
 %%%             {"id":"<player name 2>","x":<x val>,"y":<y val>,"r":<radius>},
@@ -368,7 +369,7 @@ decode__direction_update(Msg) ->
 %%%             ...
 %%%         ]
 %%%     }
-encode__state(Balls, Food, Stats) ->
+encode__state(Balls, Food, Stats, MsElapsed) ->
     %%% ref: https://www.erlang.org/docs/23/man/maps#fold-3
     %%%     fold(Fun, InitAcc, Map) -> Accumulator
     %%% description from official ref:
@@ -405,6 +406,7 @@ encode__state(Balls, Food, Stats) ->
     iolist_to_binary([
         "{",
         "\"type\":\"state\",",
+        "\"time_ms\":", integer_to_list(MsElapsed),",",
         "\"balls\":[", lists:join(",", JSON_balls_data), "],",
         "\"food\":[", lists:join(",", JSON_food_data), "],",
         "\"stats\":[", lists:join(",", JSON_stats_data), "]",
@@ -414,7 +416,6 @@ encode__state(Balls, Food, Stats) ->
 
 
 %%% returns the encoding for the game termination
-%%% it includes the top 3 largest balls at the termination
 %%% Output format: 
 %%%     {
 %%%         "type": "gameover",

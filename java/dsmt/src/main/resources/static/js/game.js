@@ -17,6 +17,7 @@ let ws = null;
 let latestBalls = [];
 let latestFood = [];
 let latestStats = [];
+let latestTimeMs = null;
 let mouseX = 0;
 let mouseY= 0;
 let everConnected = false;
@@ -46,6 +47,7 @@ const $enterBtn = document.getElementById('enter-btn');
 const $quitBtn = document.getElementById('quit-btn');
 const $hudGame = document.getElementById('hud-game');
 const $hudPlayer = document.getElementById('hud-player');
+const $hudTime = document.getElementById('hud-time');
 const $hudCountAlive = document.getElementById('hud-count-alive');
 const $hudCountSpec = document.getElementById('hud-count-spec');
 const $hudCountTotal = document.getElementById('hud-count-total');
@@ -241,7 +243,7 @@ function renderFrame() {
     rf_drawStatsLeaderboard(ctx, latestStats, INIT_PLAYER_ID, idToHue, W, H);
 
     // 12) Update players count in head-up display
-    rf_updateHudPlayersCounts(latestBalls, latestStats);
+    rf_updateHudPlayersCounts(latestBalls, latestStats, latestTimeMs);
 
     $hudZoomVal.textContent = zoom.toFixed(1) + '×';
     rafId = requestAnimationFrame(renderFrame);
@@ -704,7 +706,7 @@ function rf_drawStatsLeaderboard(ctx, latestStats, INIT_PLAYER_ID, idToHue, W, H
     });
 }
 
-function rf_updateHudPlayersCounts(latestBalls, latestStats) {
+function rf_updateHudPlayersCounts(latestBalls, latestStats, latestTime) {
     const alive = latestBalls.length;
     const total = latestStats.length;
     const spec  = total - alive;
@@ -712,170 +714,20 @@ function rf_updateHudPlayersCounts(latestBalls, latestStats) {
     $hudCountAlive.textContent = alive;
     $hudCountSpec.textContent  = spec;
     $hudCountTotal.textContent = total;
+
+    $hudTime.textContent = formatTime(latestTime);
 }
 
-// ──────────────────────────────────────────────────────────
-// LEADERBOARD HELPERS
-// ──────────────────────────────────────────────────────────
+// Time helper
 
-/**
- * Draws the balls currently in game in the top-left of the screen, sorted by radius
- */
-function drawBallsLeaderboard(W, H) {
-    if (!latestBalls.length) return;
+function formatTime(msTotal) {
+    const mins = Math.floor(msTotal / 60000);
+    const secs = Math.floor((msTotal % 60000) / 1000);
+    const ms = msTotal % 1000;
 
-    const FONT_TITLE = '8px "Share Tech Mono", monospace';
-    const FONT_ROW   = '10px "Share Tech Mono", monospace';
-    const FONT_ME    = 'bold 10px "Share Tech Mono", monospace';
-    const PAD   = 10;
-    const LH    = 16;           // line height per row
-    const TITLE_H = 18;
-    const PW    = 230;          // panel width
-    const PX    = 14;
-    const PY    = 14;
-    const MAX_H = H - PY - 14; // don't go past canvas bottom
-
-    const sorted = [...latestBalls].sort((a, b) => (b.r || 0) - (a.r || 0));
-
-    // How many rows fit?
-    const maxRows = Math.floor((MAX_H - TITLE_H - PAD) / LH);
-    const rows = sorted.slice(0, maxRows);
-    const panelH = TITLE_H + PAD + rows.length * LH + PAD;
-
-    // Background
-    ctx.fillStyle = 'rgba(8,11,16,0.88)';
-    ctx.fillRect(PX, PY, PW, panelH);
-    ctx.strokeStyle = 'rgba(0,229,255,0.18)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(PX + 0.5, PY + 0.5, PW - 1, panelH - 1);
-
-    // Title
-    ctx.font = FONT_TITLE;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(0,255,136,0.32)';
-    ctx.fillText('BALLS', PX + PAD, PY + 5);
-    // column headers
-    ctx.fillStyle = 'rgba(0,255,136,0.20)';
-    ctx.fillText('PLAYER', PX + PAD, PY + 5);
-    ctx.textAlign = 'right';
-    ctx.fillText('RAD', PX + PW - PAD - 70, PY + 5);
-    ctx.fillText('X', PX + PW - PAD - 32, PY + 5);
-    ctx.fillText('Y', PX + PW - PAD, PY + 5);
-
-    let rowY = PY + TITLE_H;
-
-    rows.forEach((ball, i) => {
-        const isMe = ball.id === INIT_PLAYER_ID;
-        const hue  = idToHue(ball.id);
-
-        // highlight row for own ball
-        if (isMe) {
-            ctx.fillStyle = `hsla(${hue},80%,40%,0.18)`;
-            ctx.fillRect(PX + 1, rowY, PW - 2, LH);
-            // left accent bar
-            ctx.fillStyle = `hsl(${hue},100%,65%)`;
-            ctx.fillRect(PX + 1, rowY, 2, LH);
-        }
-
-        ctx.font = isMe ? FONT_ME : FONT_ROW;
-        const label = ball.id.length > 10 ? ball.id.slice(0, 9) + '…' : ball.id;
-        const rad   = (ball.r || 0).toFixed(1);
-        const bx    = Math.round(ball.x);
-        const by    = Math.round(ball.y);
-
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = isMe ? `hsl(${hue},100%,75%)` : 'rgba(0,229,255,0.68)';
-        ctx.fillText(`${i + 1}. ${label}`, PX + PAD + 4, rowY + LH / 2);
-
-        ctx.textAlign = 'right';
-        ctx.fillStyle = isMe ? `hsl(${hue},80%,70%)` : 'rgba(0,229,255,0.45)';
-        ctx.fillText(rad, PX + PW - PAD - 70, rowY + LH / 2);
-        ctx.fillText(bx, PX + PW - PAD - 32, rowY + LH / 2);
-        ctx.fillText(by, PX + PW - PAD, rowY + LH / 2);
-
-        rowY += LH;
-    });
-}
-
-/**
- * Draws the statistics (kills, deaths) in the top-right of the screen
- */
-function drawStatsLeaderboard(W, H) {
-    if (!latestStats.length) return;
-
-    const FONT_TITLE = '8px "Share Tech Mono", monospace';
-    const FONT_ROW   = '10px "Share Tech Mono", monospace';
-    const FONT_ME    = 'bold 10px "Share Tech Mono", monospace';
-    const PAD   = 10;
-    const LH    = 16;
-    const TITLE_H = 18;
-    const PW    = 210;
-    const PX    = W - PW - 14;
-    const PY    = 14;
-    const MAX_H = H - PY - 14;
-
-    const sorted = [...latestStats].sort((a, b) => {
-        if (b.k !== a.k) return b.k - a.k;
-        return a.d - b.d;
-    });
-
-    const maxRows = Math.floor((MAX_H - TITLE_H - PAD) / LH);
-    const rows = sorted.slice(0, maxRows);
-    const panelH = TITLE_H + PAD + rows.length * LH + PAD;
-
-    // Background
-    ctx.fillStyle = 'rgba(8,11,16,0.88)';
-    ctx.fillRect(PX, PY, PW, panelH);
-    ctx.strokeStyle = 'rgba(0,229,255,0.18)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(PX + 0.5, PY + 0.5, PW - 1, panelH - 1);
-
-    // Column headers
-    ctx.font = FONT_TITLE;
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(0,229,255,0.20)';
-    ctx.textAlign = 'left';
-    ctx.fillText('PLAYER', PX + PAD, PY + 5);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(0,229,255,0.28)';
-    ctx.fillText('K', PX + PW - PAD - 26, PY + 5);
-    ctx.fillStyle = 'rgba(255,61,113,0.28)';
-    ctx.fillText('D', PX + PW - PAD, PY + 5);
-
-    let rowY = PY + TITLE_H;
-
-    rows.forEach((stat, i) => {
-        const isMe = stat.id === INIT_PLAYER_ID;
-        const hue  = idToHue(stat.id);
-
-        if (isMe) {
-            ctx.fillStyle = `hsla(${hue},80%,40%,0.18)`;
-            ctx.fillRect(PX + 1, rowY, PW - 2, LH);
-            ctx.fillStyle = `hsl(${hue},100%,65%)`;
-            ctx.fillRect(PX + PW - 3, rowY, 2, LH); // right accent bar
-        }
-
-        ctx.font = isMe ? FONT_ME : FONT_ROW;
-        const label = stat.id.length > 10 ? stat.id.slice(0, 9) + '…' : stat.id;
-
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = isMe ? `hsl(${hue},100%,75%)` : 'rgba(0,229,255,0.68)';
-        ctx.fillText(`${i + 1}. ${label}`, PX + PAD + 4, rowY + LH / 2);
-
-        // kills — green tint
-        ctx.textAlign = 'right';
-        ctx.fillStyle = isMe ? '#77eeee' : 'rgba(0,229,255,0.65)';
-        ctx.fillText(stat.k, PX + PW - PAD - 26, rowY + LH / 2);
-
-        // deaths — red tint
-        ctx.fillStyle = isMe ? '#ff6680' : 'rgba(255,61,113,0.55)';
-        ctx.fillText(stat.d, PX + PW - PAD, rowY + LH / 2);
-
-        rowY += LH;
-    });
+    return `${String(mins).padStart(2, '0')}:` +
+        `${String(secs).padStart(2, '0')}:` +
+        `${String(ms).padStart(3, '0')}`;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -1169,6 +1021,11 @@ function connect(hostIp, hostPort, gameId, playerId, token) {
                 if (Array.isArray(data.balls)) latestBalls = data.balls;
                 if (Array.isArray(data.food))  latestFood  = data.food;
                 if (Array.isArray(data.stats)) latestStats = data.stats;
+                if ("time_ms" in data) {
+                    latestTimeMs = data.time_ms;
+                    console.warn("DEBUG REMOVE");
+                    console.warn(latestTimeMs);
+                }
 
                 // Death detection (my ball not present)
                 if (everConnected && !isDead) {
