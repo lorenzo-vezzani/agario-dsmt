@@ -371,15 +371,21 @@ public class ErlangSupervisorConnectionService {
             logger.error("sendCreateLobbyRequest: Error sending create lobby request to supervisor");
             return null;
         }
-        OtpErlangAtom result = (OtpErlangAtom) response.elementAt(0);
-        OtpErlangString ip = (OtpErlangString) response.elementAt(1);
-        OtpErlangLong port = (OtpErlangLong) response.elementAt(2);
-        OtpErlangString lobbyId = (OtpErlangString) response.elementAt(3);
 
+        // check response status
+        OtpErlangAtom result = (OtpErlangAtom) response.elementAt(0);
+        if (!result.atomValue().equals("full_nodes")) {
+            logger.warn("sendCreateLobbyRequest: nodes are saturated!");
+            return new LobbyInfoDTO(null, -1, null, -1);
+        }
         if (!result.atomValue().equals("ok")) {
             logger.error("sendCreateLobbyRequest: Supervisor returned error code after create lobby request");
             return null;
         }
+
+        OtpErlangString ip = (OtpErlangString) response.elementAt(1);
+        OtpErlangLong port = (OtpErlangLong) response.elementAt(2);
+        OtpErlangString lobbyId = (OtpErlangString) response.elementAt(3);
 
         int intPort;
         try {
