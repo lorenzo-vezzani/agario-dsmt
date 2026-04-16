@@ -1,7 +1,7 @@
 -module(egs_fault_tolerance).
 -behaviour(gen_server).
 
--export([start_link/2]).
+-export([start_link/2, get_state/0]).
 -export([init/1, handle_info/2, handle_call/3, handle_cast/2, terminate/2]).
 
 -define(HEARTBEAT_TIMEOUT, 3500).
@@ -11,7 +11,8 @@
     nodes = [],
     leader = undefined,
     last_heartbeat = 0,
-    waiting_leader = false
+    waiting_leader = false,
+    port = undefined
 }).
 
 start_link(Leader, NodeList) ->
@@ -32,6 +33,9 @@ init([Leader, NodeList]) ->
         last_heartbeat = Now
     }}.
 
+get_state() ->
+    gen_server:call(?MODULE, get_state).
+
 handle_info({heartbeat, LeaderNode}, State) ->
 
     Now = erlang:monotonic_time(millisecond),
@@ -43,53 +47,92 @@ handle_info({heartbeat, LeaderNode}, State) ->
 
 handle_info(send_heartbeat, State) ->
     case State#state.waiting_leader of
-        false ->  gen_server:cast( {nodes_supervisor, State#state.leader}, {egs_heartbeat, node()})
+        false ->  gen_server:cast( {nodes_supervisor, State#state.leader}, {egs_heartbeat, node()});
+        true -> ok
     end,
 
     erlang:send_after(?CHECK_INTERVAL, self(), send_heartbeat),
-    {noreply, state};
+    {noreply, State};
 
 handle_info({new_leader, LeaderId}, State) ->
+
+    ShouldClosePort =
+        State#state.port =/= undefined andalso extract_ip(node()) =/= extract_ip(LeaderId),
+
+    NewState =
+        case ShouldClosePort of
+            true ->
+                print_cli("[TEMPORARY SUPERVISOR] A new supervisor has shown. I will be killed", []),
+                port_close(State#state.port),
+                State#state{port = undefined};
+
+            false ->
+                State
+        end,
+
     erlang:send_after(?CHECK_INTERVAL, self(), check_heartbeat),
-    %% updating leader in supervisor
-    egs_supervisor:new_leader(),
-    {noreply, State#state{leader = LeaderId, waiting_leader = false}};
+    print_cli("[ELECTION] New leader confirmed: ~p", [LeaderId]),
+    egs_supervisor:new_leader(LeaderId),
+
+    {noreply, NewState#state{ leader = LeaderId, waiting_leader = false }};
 
 handle_info(check_heartbeat, State = #state{last_heartbeat = Last}) ->
     Now = erlang:monotonic_time(millisecond),
-        
-    case Now - Last > ?HEARTBEAT_TIMEOUT of
-        true ->
-            print_cli("[HEARTBEAT-TIMEOUT] Leader suspected dead", []),
 
-            %%% here an election processo must start and a claim must be received
-            NewLeader = select_minimum_ip_node(State#state.nodes),
-            print_cli("[ELECTION] New leader selected: ~p", [NewLeader]),
+    NewState =
+        case Now - Last > ?HEARTBEAT_TIMEOUT of
 
-            %% if im the new leader ill spawn a dedicated process to run it
-            case NewLeader == node() of
-                true -> open_port({spawn, "./become_leader.sh"}, [node()])
-            end,
+            true ->
+                print_cli("[HEARTBEAT-TIMEOUT] Leader suspected dead", []),
 
-            {noreply, State#state{waiting_leader = true}};
+                NewLeader = select_minimum_ip_node(State#state.nodes),
+                print_cli("[ELECTION] New leader selected: ~p", [NewLeader]),
 
-        false ->
-            erlang:send_after(?CHECK_INTERVAL, self(), check_heartbeat)
-    end,
+                Port =
+                    case NewLeader == node() of
+                        true ->
+                            NodesListStr = "[" ++ string:join( [ "'" ++ atom_to_list(N) ++ "'" || N <- State#state.nodes ], "," ) ++ "]",
+                            Cmd = "./become_leader.sh " ++ extract_ip(node()) ++ " \"" ++ NodesListStr ++ "\"",
+                            print_cli("[LAUNCHING LEADER] ~s", [Cmd]),
+                            open_port({spawn, Cmd}, [binary, use_stdio, exit_status]);
 
-    {noreply, State};
+                        false ->
+                            undefined
+                    end,
+
+                State#state{ waiting_leader = true, port = Port };
+
+            false ->
+                %% reschedule check
+                erlang:send_after(?CHECK_INTERVAL, self(), check_heartbeat),
+                State
+        end,
+
+    {noreply, NewState};
 
 handle_info({node_joining, NodeId}, State) ->
     print_cli("[NEW NODE] New node joining ~p", [NodeId]),
     NewNodesList = [NodeId | State#state.nodes],
-    NewState = State#state{nodes = NewNodesList, leader = State#state.leader, last_heartbeat = State#state.last_heartbeat},
-    {noreply, NewState};
+    NewState = State#state{nodes = NewNodesList},
+    {noreply, NewState};    
 
 handle_info({node_leaving, NodeId}, State) ->
     print_cli("[REMOVE NODE] New node removing ~p", [NodeId]),
     NewNodesList = lists:delete(NodeId, State#state.nodes),
-    NewState = State#state{nodes = NewNodesList, leader = State#state.leader, last_heartbeat = State#state.last_heartbeat},
-    {noreply, NewState}.
+    NewState = State#state{nodes = NewNodesList},
+    {noreply, NewState};
+
+%%% this handles the output from the open port process ie the new supervisor 
+handle_info({Port, {data, Data}}, State) when is_port(Port) ->
+    print_cli("[TEMPORARY SUPERVISOR] ~s", [Data]),
+    {noreply, State};
+
+handle_info(_Info, State) -> 
+    print_cli("Unrecognizedd msg: ~s", [_Info]),
+    {noreply, State}.
+
+handle_call(get_state, _From, State) ->
+    {reply, State, State};
 
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.

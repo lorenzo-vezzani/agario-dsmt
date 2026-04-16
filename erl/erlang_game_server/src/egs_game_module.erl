@@ -18,7 +18,7 @@
 -module(egs_game_module).
 -behaviour(gen_server).
 
--export([start_link/1]).
+-export([start_link/2]).
 -export([
     token_auth_client/3, 
     token_auth_supervisor/3, 
@@ -71,8 +71,8 @@ print_cli(Text, Args) -> egs_utils:print_cli("GameLogic", Text, Args).
 %%% GameId - binary identifier for this game session, e.g. <<"game-1">>
 %%%
 %%% Returns {ok, Pid} on success.
-start_link(GameId) ->
-    gen_server:start_link(?MODULE, GameId, []).
+start_link(GameId, LeaderId) ->
+    gen_server:start_link(?MODULE, {GameId, LeaderId}, []).
 
 
 %%% Initializes the game process state.

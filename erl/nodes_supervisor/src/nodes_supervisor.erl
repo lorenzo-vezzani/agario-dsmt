@@ -20,7 +20,7 @@
 
 -define(HEARTBEAT_TIMEOUT, 3500).
 
--define (WS_PORT, 49153).
+-define(WS_PORT, 49153).
 
 -define(JAVA_NODE, 'springboot_node@10.2.1.13').
 
@@ -80,10 +80,28 @@ unregister_node(NodeId) ->
 %%% ============================================================
 
 init([]) ->
-    %% Initialize empty state
     print_cli("{init/1} gen_server started", []),
-    %% heartbeat scheduling
     erlang:send_after(1000, self(), tick),
+
+    io:format("ENV RAW = ~p~n", [application:get_env(myapp, nodes_list)]),
+
+    case application:get_env(myapp, nodes_list) of
+        {ok, Nodes} when is_list(Nodes) ->
+            print_cli("{init/1} input list: ~p", [Nodes]),
+            lists:foreach(
+                fun(Node) ->
+                    {fault_tolerance_handler, Node} ! {new_leader, node()}
+                end,
+                Nodes
+            );
+
+        undefined ->
+            print_cli("nolist", []),
+            nolist
+    end,
+
+    %%% gen_server:call({springboot_mbox, ?JAVA_NODE}, {new_leader, self(), node()}),
+
     {ok, #state{game_proc = #{}, node_load = #{}, heartbeat_nodes = #{}}}.
 
 %%% ============================================================
@@ -117,7 +135,7 @@ handle_call({register_node, NodeId}, _From, State) ->
             egs_broadcast(State, {node_joining, NodeId}),
 
             %% sending to the new node the list of current nodes
-            {reply, maps:keys(State#state.node_load), NewState}
+            {reply, maps:keys(NewNodeLoad), NewState}
     end;
 
 handle_call({unregister_node, NodeId}, _From, State) ->
@@ -281,22 +299,27 @@ handle_info(global_timeout_check, State) ->
     Now = erlang:monotonic_time(millisecond),
     HeartbeatMap = State#state.heartbeat_nodes,
 
-    maps:fold(
-        fun(NodeId, LastHeartbeat, _Acc) ->
-            if
-                (Now - LastHeartbeat) > ?HEARTBEAT_TIMEOUT ->
-                    unregister_node_logic(NodeId, State);
-                true ->
-                    ok
-            end
-        end, 
-        ok,
-        HeartbeatMap
-    ),
+    NewState =
+        maps:fold(
+            fun(NodeId, LastHeartbeat, AccState) ->
+                case (Now - LastHeartbeat) > ?HEARTBEAT_TIMEOUT of
+
+                    true ->
+                        print_cli("[EGS TIMEOUT] Node ~s leaving the cluster", [NodeId]),
+                        {ok, UpdatedState} = unregister_node_logic(NodeId, AccState),
+                        UpdatedState;
+
+                    false ->
+                        AccState
+                end
+            end,
+            State,
+            HeartbeatMap
+        ),
 
     erlang:send_after(?HEARTBEAT_TIMEOUT, self(), global_timeout_check),
 
-    {noreply, State};
+    {noreply, NewState};
 
 %%% ===============================================================
 %%% Default functions 

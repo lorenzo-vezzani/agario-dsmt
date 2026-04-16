@@ -24,7 +24,7 @@
     gl__update_stats/2,
     gl__eat_food/2,
     decode__direction_update/1,
-    encode__state/3,
+    encode__state/4,
     encode__gameover/2
 ]).
 

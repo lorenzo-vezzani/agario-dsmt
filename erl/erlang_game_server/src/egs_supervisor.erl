@@ -36,7 +36,7 @@
 
 -define(GAME_PROC_TABLE,    game_proc_table).
 
--define(CENTRAL_SUPERVISOR_NAME, 'nodes_supervisor@127.0.0.1').
+-define(CENTRAL_SUPERVISOR_NAME, 'nodes_supervisor@10.2.1.11').
 
 -define(LEADER_KEY, leader).
 
@@ -147,7 +147,7 @@ start_game(GameId) ->
 
         {error, not_found} ->
             print_cli("{start_game/1} starting game id=~s", [GameId]),
-            supervisor:start_child(?MODULE, [GameId]);
+            supervisor:start_child(?MODULE, [GameId, get_leader()]);
 
         % game found, so conflict on GameId
         {ok, _} ->
@@ -242,6 +242,7 @@ unregister_game(GameId) ->
 %%% This will be called by fault tolerance module at the confirmed election of a new leader 
 %%% In this, we will also help new supervisor to rebuild state
 new_leader(LeaderId) ->
+    print_cli("New leader recieved ~p", [LeaderId]),
     ets:insert(?GAME_PROC_TABLE, {?LEADER_KEY, LeaderId}),
 
     %% 1) notify all children
@@ -270,12 +271,14 @@ new_leader(LeaderId) ->
         Games
     ),
 
+    print_cli("Registration to new leader ~p", [LeaderId]),
     %% 3) register myself to new supervisor
     gen_server:call(
         {nodes_supervisor, LeaderId}, 
         {register_node, node()}
     ),
 
+    print_cli("Sending internal state to new leader ~p", [LeaderId]),
     %% 4) send to new supervisor
     gen_server:cast(
         {nodes_supervisor, LeaderId},
