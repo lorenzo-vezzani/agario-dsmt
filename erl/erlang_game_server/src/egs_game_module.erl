@@ -57,8 +57,6 @@
 -define(TOKEN_TYPE_SUP, token_sup).
 -define(TOKEN_TYPE_CLI, token_cli).
 
--define(CENTRAL_SUPERVISOR_NAME, 'nodes_supervisor@10.2.1.11').
-
 %%% ---------------------------
 %%% region MANAGEMENT FUNCTIONS
 %%% ---------------------------
@@ -82,7 +80,7 @@ start_link(GameId) ->
 %%% Schedules the first tick immediately.
 %%%
 %%% GameId: passed from start_link/1 via the supervisor
-init(GameId) ->
+init({GameId, LeaderId}) ->
 
     % trap_exit granys that if a linked process dies, we receive an {'EXIT', Pid, Reason} msg
     % so terminate/2 is always called for proper ETS cleanup
@@ -99,6 +97,7 @@ init(GameId) ->
     % initializes state
     {ok, #{
         game_id => GameId, % init to the passed GameId
+        leader => LeaderId,
         ?STATE_CLIENTS => #{}, % no clients yet
         ?STATE_STATS => #{}, % no clients yet
         ?STATE_BALL => #{}, % balls empty
@@ -133,7 +132,7 @@ terminate(_Reason, State) ->
     
     % Notify the remote central supervisor
     gen_server:cast(
-        {nodes_supervisor, ?CENTRAL_SUPERVISOR_NAME}, 
+        {nodes_supervisor, maps:get(leader, State)}, 
         {game_terminated, GameId, Payload}
     ),
 
@@ -252,7 +251,7 @@ perform_join(PlayerId, State) ->
 
     %%% 3) Inform the central supervisor of the completed join
     gen_server:cast(
-        {nodes_supervisor, ?CENTRAL_SUPERVISOR_NAME}, 
+        {nodes_supervisor, maps:get(leader, State)}, 
         {join_completed, maps:get(game_id, State)}
     ),
 
@@ -454,7 +453,7 @@ handle_cast({leave, PlayerId}, State) ->
 
     % Inform the central supervisor of the leave
     gen_server:cast(
-        {nodes_supervisor, ?CENTRAL_SUPERVISOR_NAME}, 
+        {nodes_supervisor, maps:get(leader, State)}, 
         {leave_completed, maps:get(game_id, State)}
     ),
 
@@ -465,7 +464,11 @@ handle_cast({leave, PlayerId}, State) ->
     end,
 
     % update state
-    {noreply, State#{?STATE_CLIENTS => Clients, ?STATE_BALL => Balls}}.
+    {noreply, State#{?STATE_CLIENTS => Clients, ?STATE_BALL => Balls}};
+
+handle_cast({new_leader, LeaderId}, State) ->
+    NewState = State#{leader => LeaderId},
+    {noreply, NewState}.
 
 %%% endregion
 %%% ---------------------------
@@ -690,6 +693,11 @@ handle_info({'DOWN', _Ref, process, WsPid, Reason}, State) ->
         [] -> {noreply, State}
     end.
 
+
+%%% Returns the number of client playing
+handle_call(get_players_count, _From, State) ->
+    Count = map_size(maps:get(?STATE_BALL, State)),
+    {reply, Count, State};
 
 %%% Catch-all for unexpected synchronous calls.
 %%% Returns ok without modifying state.

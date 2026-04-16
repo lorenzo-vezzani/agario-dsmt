@@ -30,17 +30,25 @@
     list_games/0,
     lookup/1,
     register_game/2,
-    unregister_game/1
+    unregister_game/1,
+    new_leader/1
 ]).
 
 -define(GAME_PROC_TABLE,    game_proc_table).
 
--define(NODES_SUP, 'nodes_supervisor@10.2.1.11').
+-define(CENTRAL_SUPERVISOR_NAME, 'nodes_supervisor@127.0.0.1').
 
+-define(LEADER_KEY, leader).
 
 % Module specific cli print
 print_cli(Text, Args) -> egs_utils:print_cli("SUPERVIS.", Text, Args).
 
+%%% Function that returns leader id stored in ets
+get_leader() ->
+    case ets:lookup(?GAME_PROC_TABLE, ?LEADER_KEY) of
+        [{_, Leader}] -> Leader;
+        [] -> undefined
+    end.
 
 %%% Starts this supervisor and registers it locally under the module name.
 %%% Also creates the ETS registry table.
@@ -112,6 +120,16 @@ init([]) ->
     ],
     print_cli("{init/1} Children specifications set", []),
 
+    %% register my self to supervisor
+    NodeList = gen_server:call(
+        {nodes_supervisor, ?CENTRAL_SUPERVISOR_NAME}, 
+        {register_node, node()}
+    ),
+
+    ets:insert(?GAME_PROC_TABLE, {?LEADER_KEY, ?CENTRAL_SUPERVISOR_NAME}),
+
+    egs_fault_tolerance:start_link(?CENTRAL_SUPERVISOR_NAME, NodeList),
+
     % return ok (return to start_link)
     {ok, {SupervisorSpec, ChildSpec}}.
 
@@ -157,7 +175,7 @@ stop_game(GameId, Stats) ->
             % but needed if it crashes without unregistering
             
             %% contacting the supervisor to notify that a game is terminated
-            gen_server:cast({nodes_supervisor, 'nodes_supervisor@10.2.1.11'}, {game_terminated, GameId, Stats}),
+            gen_server:cast({nodes_supervisor, get_leader()}, {game_terminated, GameId, Stats}),
 
             unregister_game(GameId),
 
@@ -219,3 +237,47 @@ register_game(GameId, Pid) ->
 unregister_game(GameId) ->
     print_cli("{unregister_game/1} game=~s", [GameId]),
     ets:delete(?GAME_PROC_TABLE, GameId).
+
+%%% With this function the new supervisor used become LeaderId
+%%% This will be called by fault tolerance module at the confirmed election of a new leader 
+%%% In this, we will also help new supervisor to rebuild state
+new_leader(LeaderId) ->
+    ets:insert(?GAME_PROC_TABLE, {?LEADER_KEY, LeaderId}),
+
+    %% 1) notify all children
+    Children = supervisor:which_children(?MODULE),
+    lists:foreach(
+        fun({_Id, Pid, _Type, _Modules}) ->
+            case Pid of
+                undefined -> ok;
+                _ -> gen_server:cast(Pid, {new_leader, LeaderId})
+            end
+        end,
+        Children
+    ),
+
+    %% 2) build {GameId, NPlayers}
+    Games = list_games(),
+
+    GamesWithPlayers = lists:map(
+        fun({GameId, Pid}) ->
+            NPlayers = case catch gen_server:call(Pid, get_players_count) of
+                {'EXIT', _} -> 0; 
+                Value -> Value
+            end,
+            {GameId, NPlayers}
+        end,
+        Games
+    ),
+
+    %% 3) register myself to new supervisor
+    gen_server:call(
+        {nodes_supervisor, LeaderId}, 
+        {register_node, node()}
+    ),
+
+    %% 4) send to new supervisor
+    gen_server:cast(
+        {nodes_supervisor, LeaderId},
+        {egs_state, node(), GamesWithPlayers}
+    ).

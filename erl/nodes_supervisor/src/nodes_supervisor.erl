@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 %% Public API
--export([start_link/0, start_game/0, game_terminated/2, token_auth/3, get_games_list/0]).
+-export([start_link/0, start_game/0, game_terminated/2, token_auth/3, get_games_list/0, register_node/1, unregister_node/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -18,22 +18,22 @@
 
 -define(SERVER, ?MODULE).
 
--define(INITIAL_NODES, [
-    'egs@10.2.1.4',
-    'egs@10.2.1.5',
-    'egs@10.2.1.6'
-]).
+-define(HEARTBEAT_TIMEOUT, 3500).
 
 -define (WS_PORT, 49153).
 
 -define(JAVA_NODE, 'springboot_node@10.2.1.13').
 
+-define(MAX_GAME_FOR_EGS, 10).
+
 %% Internal state of the gen_server
 -record(state, {
     %% Mapping GameId => {NodeId, n_players}
     game_proc  :: map(),
-    %% Mapping NodeId => number of active games
-    node_load  :: map()
+    %% Mapping NodeId => {number of active games}
+    node_load  :: map(),
+    %% Mapp heartbeat NodeId => {pending heartbeat}
+    heartbeat_nodes :: map()
 }).
 %%% ============================================================
 %%%  API
@@ -82,8 +82,9 @@ unregister_node(NodeId) ->
 init([]) ->
     %% Initialize empty state
     print_cli("{init/1} gen_server started", []),
-    NodeLoad = maps:from_keys(?INITIAL_NODES, 0),
-    {ok, #state{game_proc = #{}, node_load = NodeLoad}}.
+    %% heartbeat scheduling
+    erlang:send_after(1000, self(), tick),
+    {ok, #state{game_proc = #{}, node_load = #{}, heartbeat_nodes = #{}}}.
 
 %%% ============================================================
 %%%  Synch
@@ -95,32 +96,39 @@ handle_call({start_game}, _From, State) ->
 
 handle_call({register_node, NodeId}, _From, State) ->
     case maps:is_key(NodeId, State#state.node_load) of
+
         true ->
             {reply, {error, already_registered}, State};
 
         false ->
-            NewNodeLoad = maps:put(NodeId, 0, State#state.node_load),
-            print_cli("Node ~p registered", [NodeId]),
-            {reply, ok, State#state{node_load = NewNodeLoad}}
+            NewNodeLoad =
+                maps:put(NodeId, 0, State#state.node_load),
+
+            Now = erlang:monotonic_time(millisecond),
+            NewHeartbeatNodes = 
+                maps:put(NodeId, Now, State#state.heartbeat_nodes),
+            erlang:send_after(?HEARTBEAT_TIMEOUT, self(), global_timeout_check),
+
+            NewState = State#state{node_load = NewNodeLoad, heartbeat_nodes = NewHeartbeatNodes},
+
+            print_cli("Node ~p is joining cluster", [NodeId]),
+            
+            %% send to "old" nodes the new node
+            egs_broadcast(State, {node_joining, NodeId}),
+
+            %% sending to the new node the list of current nodes
+            {reply, maps:keys(State#state.node_load), NewState}
     end;
 
 handle_call({unregister_node, NodeId}, _From, State) ->
-    case maps:find(NodeId, State#state.node_load) of
-        %% node not found
-        error ->
-            {reply, {error, not_found}, State};
+    case unregister_node_logic(NodeId, State) of
+        {{error, Reason}, SameState} ->
+            {reply, {error, Reason}, SameState};
 
-        %% node found, but busy with games
-        {ok, Count} when Count > 0 ->
-            {reply, {error, node_busy}, State};
-        
-        %% node found
-        {ok, 0} ->
-            NewNodeLoad = maps:remove(NodeId, State#state.node_load),
-            print_cli("Node ~p unregistered", [NodeId]),
-            {reply, ok, State#state{node_load = NewNodeLoad}}
+        {ok, NewState} ->
+            print_cli("Node ~p is leaving cluster", [NodeId]),
+            {reply, ok, NewState}
     end;
-
 
 handle_call({token_auth, Token, PlayerId, GameId}, _From, State) ->
     {Reply, NewState} = token_auth_logic(Token, PlayerId, GameId, State),
@@ -211,7 +219,7 @@ handle_cast({join_completed, GameId}, State) ->
     NewGameProc =
         maps:update_with(GameId, fun({NodeId, NPlayers}) -> {NodeId, NPlayers + 1} end, State#state.game_proc),
 
-    NewState = State#state{ game_proc = NewGameProc, node_load = State#state.node_load },
+    NewState = State#state{ game_proc = NewGameProc},
     {noreply, NewState};
 
 handle_cast({leave_completed, GameId}, State) ->
@@ -219,10 +227,76 @@ handle_cast({leave_completed, GameId}, State) ->
     NewGameProc =
         maps:update_with(GameId, fun({NodeId, NPlayers}) -> {NodeId, NPlayers - 1} end, State#state.game_proc),
 
-    NewState = State#state{ game_proc = NewGameProc, node_load = State#state.node_load },
+    NewState = State#state{ game_proc = NewGameProc },
+    {noreply, NewState};
+
+handle_cast({egs_heartbeat, NodeId}, State) ->
+    Now = erlang:monotonic_time(millisecond),
+
+    NewHeartbeatNodes = maps:put(NodeId, Now, State#state.heartbeat_nodes),
+
+    {noreply, State#state{ heartbeat_nodes = NewHeartbeatNodes }};
+
+handle_cast({egs_state, NodeId, GamesWithPlayers}, State) ->
+
+    %% 1) update game_proc
+    OldGameProc = State#state.game_proc,
+
+    NewGameProc = lists:foldl(
+        fun({GameId, NPlayers}, Acc) ->
+            maps:put(GameId, {NodeId, NPlayers}, Acc)
+        end,
+        OldGameProc,
+        GamesWithPlayers
+    ),
+
+    %% 2) update node_load
+    NumGames = length(GamesWithPlayers),
+    OldNodeLoad = State#state.node_load,
+    NewNodeLoad = maps:put(NodeId, NumGames, OldNodeLoad),
+
+    %% 3) new state
+    NewState = State#state{
+        game_proc = NewGameProc,
+        node_load = NewNodeLoad
+    },
+
     {noreply, NewState};
 
 handle_cast(_Msg, State) -> {noreply, State}.
+
+%%% ===============================================================
+%%% Heartbeat message
+%%% ===============================================================
+
+handle_info(tick, State) ->
+
+    egs_broadcast(State, {heartbeat, node()}),
+
+    erlang:send_after(1000, self(), tick),
+
+    {noreply, State};
+
+handle_info(global_timeout_check, State) ->
+    Now = erlang:monotonic_time(millisecond),
+    HeartbeatMap = State#state.heartbeat_nodes,
+
+    maps:fold(
+        fun(NodeId, LastHeartbeat, _Acc) ->
+            if
+                (Now - LastHeartbeat) > ?HEARTBEAT_TIMEOUT ->
+                    unregister_node_logic(NodeId, State);
+                true ->
+                    ok
+            end
+        end, 
+        ok,
+        HeartbeatMap
+    ),
+
+    erlang:send_after(?HEARTBEAT_TIMEOUT, self(), global_timeout_check),
+
+    {noreply, State};
 
 %%% ===============================================================
 %%% Default functions 
@@ -243,6 +317,10 @@ start_game_logic(State) ->
         %% No nodes avaible
         {error, empty_table} = Err ->
             {Err, State};
+
+        {full_nodes} ->
+            print_cli("Nodes are full", []),
+            {{full_nodes}, State};
 
         {ok, TargetNode} ->
             %% Generate a random 32b game id
@@ -322,14 +400,37 @@ token_auth_logic(Token, PlayerId, GameIdList, State) ->
 get_games_list_logic(State) ->
     {State#state.game_proc, State}.
 
+
+unregister_node_logic(NodeId, State) ->
+    case maps:find(NodeId, State#state.node_load) of
+        error ->
+            {{error, not_found}, State};
+
+        {ok, _} ->
+            NewNodeLoad = maps:remove(NodeId, State#state.node_load),
+            NewHeartbeatNodes = maps:remove(NodeId, State#state.heartbeat_nodes),
+            
+            NewState = State#state{
+                node_load = NewNodeLoad, 
+                heartbeat_nodes = NewHeartbeatNodes
+            },
+            
+            egs_broadcast(NewState, {node_leaving, NodeId}),
+
+            {ok, NewState}
+    end.
+
 %%% ============================================================
 %%%  Internal utilities
 %%% ============================================================
 
+egs_broadcast(State, Msg) ->
+    Nodes = maps:keys(State#state.node_load),
+    lists:foreach( fun(Node) -> {fault_tolerance_handler, Node} ! Msg end, Nodes ).
+
 generate_game_id() ->
     Bytes = crypto:strong_rand_bytes(16),
     binary:encode_hex(Bytes).
-
 
 find_least_loaded_node(NodeLoad) when map_size(NodeLoad) =:= 0 ->
     {error, empty_table};
@@ -345,7 +446,15 @@ find_least_loaded_node(NodeLoad) ->
         hd(maps:to_list(NodeLoad)),   %% initial value
         NodeLoad
     ),
-    {ok, Node}.
+
+    NGames = maps:get(Node, NodeLoad),
+    case NGames =< ?MAX_GAME_FOR_EGS of
+        true ->
+            {ok, Node};
+        false ->
+            {full_nodes}
+    end.
+
 
 extract_ip(Name) ->
     NameStr = atom_to_list(Name),
