@@ -70,11 +70,17 @@ handle_info({new_leader, LeaderId}, State) ->
                 State
         end,
 
-    erlang:send_after(?CHECK_INTERVAL, self(), check_heartbeat),
     print_cli("[ELECTION] New leader confirmed: ~p", [LeaderId]),
     egs_supervisor:new_leader(LeaderId),
 
-    {noreply, NewState#state{ leader = LeaderId, waiting_leader = false }};
+    Now = erlang:monotonic_time(millisecond),
+    
+    erlang:send_after(?CHECK_INTERVAL, self(), check_heartbeat),
+    
+    {noreply, NewState#state{ last_heartbeat = Now, leader = LeaderId, waiting_leader = false }};
+
+handle_info(check_heartbeat, State) when State#state.waiting_leader == true ->
+    donothing;
 
 handle_info(check_heartbeat, State = #state{last_heartbeat = Last}) ->
     Now = erlang:monotonic_time(millisecond),
