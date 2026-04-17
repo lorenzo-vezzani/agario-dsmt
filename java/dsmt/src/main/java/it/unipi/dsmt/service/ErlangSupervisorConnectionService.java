@@ -1,7 +1,7 @@
 package it.unipi.dsmt.service;
 
 import com.ericsson.otp.erlang.*;
-import it.unipi.dsmt.config.AgarioConfig;
+import it.unipi.dsmt.config.ErlangSupervisorConnectionConfig;
 import it.unipi.dsmt.dto.GameStatsDTO;
 import it.unipi.dsmt.dto.LobbyInfoDTO;
 import it.unipi.dsmt.dto.PlayerStatDTO;
@@ -34,12 +34,14 @@ requests:
     join_lobby_req          ->  { join_lobby_req, req_id, {"username", lobby_id, "token"} }    J -> E
     stats_req               ->  { stats_req, req_id, {json_string} }                           E -> J
     get_lobbies_req         ->  { get_lobbies_req, req_id, {} }                                J -> E
+    new_leader_req          ->  { new_leader, req_id, {pid} }                                  E -> J
 
 responses:
     new_lobby_resp          ->  { new_lobby_resp, req_id, {result(atom), ip_addr, port, lobby_id} }                        E -> J
     join_lobby_resp         ->  { join_lobby_resp, req_id, {result(atom)} }                                                E -> J
     stats_resp              ->  { stats_resp, req_id, {result (atom)} }                                                    J -> E
     get_lobbies_resp        ->  { get_lobbies_resp, req_id, {result (atom), [{ip_addr, port, lobby_id, n_players}, ...]} } E -> J
+    new_leader_resp         ->  { new_leader_resp, req_id, {result (atom)} }                                               J -> E
  */
 @Service
 public class ErlangSupervisorConnectionService {
@@ -54,7 +56,7 @@ public class ErlangSupervisorConnectionService {
      * For gathering erlang configs
      */
     @Autowired
-    private AgarioConfig agarioConfig;
+    private ErlangSupervisorConnectionConfig erlangSupervisorConnectionConfig;
 
     /**
      * For erlang listener scheduling
@@ -87,6 +89,8 @@ public class ErlangSupervisorConnectionService {
     private OtpNode currentNode;
     private OtpMbox currentMbox;
 
+    private OtpErlangPid currentSupervisorPid = null;
+
     private static final Logger logger = LoggerFactory.getLogger(ErlangSupervisorConnectionService.class);
 
     /**
@@ -99,7 +103,6 @@ public class ErlangSupervisorConnectionService {
             applicationContext.close();
             return;
         }
-        logger.info("Supervisor set at {}", agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp());
 
         // listener process
         taskExecutor.execute(() -> {
@@ -144,8 +147,13 @@ public class ErlangSupervisorConnectionService {
         try {
             // epmd daemon must be active, otherwise can't publish this node name
             // command: epmd -daemon
-            currentNode = new OtpNode("springboot_node@" + agarioConfig.getSelfErlangIp(), agarioConfig.getSupervisorCookie());
-            currentMbox = currentNode.createMbox("springboot_mbox");
+            String selfNode = erlangSupervisorConnectionConfig.getSelfNode();
+            String selfErlangIp = erlangSupervisorConnectionConfig.getSelfErlangIp();
+            String supervisorCookie = erlangSupervisorConnectionConfig.getSupervisorCookie();
+            String selfMb = erlangSupervisorConnectionConfig.getSelfMb();
+
+            currentNode = new OtpNode(selfNode + "@" + selfErlangIp, supervisorCookie);
+            currentMbox = currentNode.createMbox(selfMb);
             return true;
         }
         catch (IOException e) {
@@ -210,6 +218,10 @@ public class ErlangSupervisorConnectionService {
         // new stats arrived
         else if (type.equals("stats_req")) {
             processStats(ref, req_id, content);
+        }
+        // new leader
+        else if (type.equals("new_leader")) {
+            processNewLeader(ref, req_id, content);
         }
         // unknown message received
         else {
@@ -276,11 +288,29 @@ public class ErlangSupervisorConnectionService {
         OtpErlangTuple msg = buildMessage(new OtpErlangAtom("stats_resp"), req_id, result);
         OtpErlangTuple toSend = GenServerUtils.buildGenServerCallResponse(ref, msg);
 
-        currentMbox.send(
-                agarioConfig.getSupervisorMb(),
-                agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp(),
-                toSend
-        );
+        currentMbox.send(currentSupervisorPid, toSend);
+    }
+
+    private void processNewLeader(OtpErlangObject ref, int req_id, OtpErlangTuple content) {
+        if (content.arity() != 1) {
+            // invalid format
+            logger.error("Invalid message received: {}", content);
+            return;
+        }
+        OtpErlangObject possiblePid = content.elementAt(0);
+        if (!(possiblePid instanceof OtpErlangPid)) {
+            logger.error("Invalid pid received: {}", possiblePid);
+            return;
+        }
+
+        currentSupervisorPid = (OtpErlangPid) possiblePid;
+        logger.info("New supervisor received!");
+
+        OtpErlangTuple result = new OtpErlangTuple(new OtpErlangAtom("ok"));
+        OtpErlangTuple msg = buildMessage(new OtpErlangAtom("stats_resp"), req_id, result);
+        OtpErlangTuple toSend = GenServerUtils.buildGenServerCallResponse(ref, msg);
+
+        currentMbox.send(currentSupervisorPid, toSend);
     }
 
     /**
@@ -308,6 +338,11 @@ public class ErlangSupervisorConnectionService {
      * @return tuple found in the response message (null for timeout)
      */
     private OtpErlangTuple sendGenServerCallRequest(OtpErlangAtom type, OtpErlangTuple content) {
+        if (currentSupervisorPid == null) {
+            logger.error("No supervisor is set, can't process request!");
+            return null;
+        }
+
         // create pending request
         CompletableFuture<OtpErlangTuple> future = new CompletableFuture<>();   // create future
         int requestId = nextRequestId.getAndIncrement();                        // extract request id to use
@@ -316,11 +351,7 @@ public class ErlangSupervisorConnectionService {
         // build and send request
         OtpErlangTuple msg = buildMessage(type, requestId, content);
         OtpErlangTuple toSend = GenServerUtils.buildGenServerCallRequest(currentNode, currentMbox, msg);
-        currentMbox.send(
-                agarioConfig.getSupervisorMb(),
-                agarioConfig.getSupervisorNodeName() + "@" + agarioConfig.getSupervisorIp(),
-                toSend
-        );
+        currentMbox.send(currentSupervisorPid, toSend);
 
         try {
             // wait for response

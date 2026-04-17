@@ -24,6 +24,8 @@
 
 -define(JAVA_NODE, 'springboot_node@10.2.1.13').
 
+-define(JAVA_MBOX, springboot_mbox).
+
 -define(MAX_GAME_FOR_EGS, 10).
 
 %% Internal state of the gen_server
@@ -79,6 +81,27 @@ unregister_node(NodeId) ->
 %%%  Callbacks
 %%% ============================================================
 
+call_until_ok(Server, Msg) ->
+    try gen_server:call(Server, Msg, 2000) of
+        Reply -> Reply
+    catch
+        exit:{timeout, _} ->
+            io:format("Timeout, retry...~n"),
+            timer:sleep(1000),
+            call_until_ok(Server, Msg);
+
+        exit:{nodedown, Node} ->
+            io:format("Nodo ~p giù, retry...~n", [Node]),
+            timer:sleep(1000),
+            net_kernel:connect_node(Node),
+            call_until_ok(Server, Msg);
+
+        exit:Reason ->
+            io:format("Errore: ~p~n", [Reason]),
+            timer:sleep(1000),
+            call_until_ok(Server, Msg)
+    end.
+
 init([]) ->
     print_cli("{init/1} gen_server started", []),
     erlang:send_after(1000, self(), tick),
@@ -100,7 +123,7 @@ init([]) ->
             nolist
     end,
 
-    %%% gen_server:call({springboot_mbox, ?JAVA_NODE}, {new_leader, self(), node()}),
+    call_until_ok({?JAVA_MBOX, ?JAVA_NODE}, {new_leader, 0, {self()}}),
 
     {ok, #state{game_proc = #{}, node_load = #{}, heartbeat_nodes = #{}}}.
 
@@ -225,7 +248,7 @@ handle_cast({game_terminated, GameId, Stats}, State) ->
             %% sending stats to java node (converted to string)
             %% NOTE: i dont know how to model a req_id -> im just using GameId as req_id
             %% why bro they aren't even the same type
-            gen_server:call({springboot_mbox, ?JAVA_NODE}, {stats_req, 100, {binary_to_list(Stats)}}),
+            gen_server:call({?JAVA_MBOX, ?JAVA_NODE}, {stats_req, 100, {binary_to_list(Stats)}}),
 
             print_cli("{game_terminated} Game ~s stopped, tables updated \nStats: ~p", [GameId, Stats]),
 
