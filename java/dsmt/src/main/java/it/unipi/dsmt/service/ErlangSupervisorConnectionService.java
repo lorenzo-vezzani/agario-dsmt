@@ -355,7 +355,7 @@ public class ErlangSupervisorConnectionService {
 
         try {
             // wait for response
-            return future.get(5, TimeUnit.SECONDS);
+            return future.get(erlangSupervisorConnectionConfig.getSupervisorTimeoutSeconds(), TimeUnit.SECONDS);
         } catch (ExecutionException e) {
             logger.error("Error sending request to supervisor: {}", String.valueOf(e.getCause()));
             return null;

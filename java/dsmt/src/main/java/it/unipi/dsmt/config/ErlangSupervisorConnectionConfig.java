@@ -11,6 +11,7 @@ public class ErlangSupervisorConnectionConfig {
     private String selfNode;
     private String selfErlangIp;
     private String supervisorCookie;
+    private int supervisorTimeoutSeconds;
 
     public String getSelfMb() {
         return selfMb;
@@ -42,5 +43,13 @@ public class ErlangSupervisorConnectionConfig {
 
     public void setSupervisorCookie(String supervisorCookie) {
         this.supervisorCookie = supervisorCookie;
+    }
+
+    public int getSupervisorTimeoutSeconds() {
+        return supervisorTimeoutSeconds;
+    }
+
+    public void setSupervisorTimeoutSeconds(int supervisorTimeoutSeconds) {
+        this.supervisorTimeoutSeconds = supervisorTimeoutSeconds;
     }
 }
