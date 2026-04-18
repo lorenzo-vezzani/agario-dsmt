@@ -405,7 +405,7 @@ public class ErlangSupervisorConnectionService {
 
         // check response status
         OtpErlangAtom result = (OtpErlangAtom) response.elementAt(0);
-        if (!result.atomValue().equals("full_nodes")) {
+        if (result.atomValue().equals("full_nodes")) {
             logger.warn("sendCreateLobbyRequest: nodes are saturated!");
             return new LobbyInfoDTO(null, -1, null, -1);
         }
