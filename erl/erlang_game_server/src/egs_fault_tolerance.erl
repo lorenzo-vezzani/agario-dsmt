@@ -82,16 +82,17 @@ handle_info({new_leader, LeaderId}, State) ->
 handle_info(check_heartbeat, State) when State#state.waiting_leader == true ->
     donothing;
 
-handle_info(check_heartbeat, State = #state{last_heartbeat = Last}) ->
+handle_info(check_heartbeat, State = #state{last_heartbeat = Last, leader = Leader, nodes = Nodes}) ->
     Now = erlang:monotonic_time(millisecond),
 
     NewState =
         case Now - Last > ?HEARTBEAT_TIMEOUT of
 
             true ->
+                NewNodes = lists:filter(fun(N) -> extract_ip(N) =/= extract_ip(Leader) end, Nodes),
                 print_cli("[HEARTBEAT-TIMEOUT] Leader suspected dead", []),
 
-                NewLeader = select_minimum_ip_node(State#state.nodes),
+                NewLeader = select_minimum_ip_node(NewNodes),
                 print_cli("[ELECTION] New leader selected: ~p", [NewLeader]),
 
                 Port =
@@ -106,7 +107,7 @@ handle_info(check_heartbeat, State = #state{last_heartbeat = Last}) ->
                             undefined
                     end,
 
-                State#state{ waiting_leader = true, port = Port };
+                State#state{ waiting_leader = true, port = Port, nodes = NewNodes };
 
             false ->
                 %% reschedule check
