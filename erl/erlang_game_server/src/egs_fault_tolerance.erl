@@ -15,12 +15,15 @@
     port = undefined
 }).
 
+%%% Module specific cli print
+print_cli(Text, Args) -> egs_utils:print_cli("FAULT TOL", Text, Args).
+
 start_link(Leader, NodeList) ->
     gen_server:start_link({local, fault_tolerance_handler}, ?MODULE, [Leader, NodeList], []).
 
 init([Leader, NodeList]) ->
 
-    print_cli("[FAULT TOLERANCE] Started with Leader: ~p, Nodes: ~p", [Leader, NodeList]),
+    print_cli("{init} Started with Leader: ~p, Nodes: ~p", [Leader, NodeList]),
 
     Now = erlang:monotonic_time(millisecond),
 
@@ -62,7 +65,7 @@ handle_info({new_leader, LeaderId}, State) ->
     NewState =
         case ShouldClosePort of
             true ->
-                print_cli("[TEMPORARY SUPERVISOR] A new supervisor has shown. I will be killed", []),
+                print_cli("{new_leader} A new supervisor has shown. I will be killed (Temporary Supervisor)", []),
                 port_close(State#state.port),
                 State#state{port = undefined};
 
@@ -70,7 +73,7 @@ handle_info({new_leader, LeaderId}, State) ->
                 State
         end,
 
-    print_cli("[ELECTION] New leader confirmed: ~p", [LeaderId]),
+    print_cli("{new_leader} New leader confirmed: ~p", [LeaderId]),
     egs_supervisor:new_leader(LeaderId),
 
     Now = erlang:monotonic_time(millisecond),
@@ -90,17 +93,17 @@ handle_info(check_heartbeat, State = #state{last_heartbeat = Last, leader = Lead
 
             true ->
                 NewNodes = lists:filter(fun(N) -> extract_ip(N) =/= extract_ip(Leader) end, Nodes),
-                print_cli("[HEARTBEAT-TIMEOUT] Leader suspected dead", []),
+                print_cli("{check_heartbeat} HEARTBEAT TIMEOUT - Leader suspected dead", []),
 
                 NewLeader = select_minimum_ip_node(NewNodes),
-                print_cli("[ELECTION] New leader selected: ~p", [NewLeader]),
+                print_cli("{check_heartbeat} ELECTION - New leader selected: ~p", [NewLeader]),
 
                 Port =
                     case NewLeader == node() of
                         true ->
                             NodesListStr = "[" ++ string:join( [ "'" ++ atom_to_list(N) ++ "'" || N <- State#state.nodes ], "," ) ++ "]",
                             Cmd = "./become_leader.sh " ++ extract_ip(node()) ++ " \"" ++ NodesListStr ++ "\"",
-                            print_cli("[LAUNCHING LEADER] ~s", [Cmd]),
+                            print_cli("{check_heartbeat} LAUNCHING LEADER - ~s", [Cmd]),
                             open_port({spawn, Cmd}, [binary, use_stdio, exit_status]);
 
                         false ->
@@ -118,13 +121,13 @@ handle_info(check_heartbeat, State = #state{last_heartbeat = Last, leader = Lead
     {noreply, NewState};
 
 handle_info({node_joining, NodeId}, State) ->
-    print_cli("[NEW NODE] New node joining ~p", [NodeId]),
+    print_cli("{node_joining} New node joining ~p", [NodeId]),
     NewNodesList = [NodeId | State#state.nodes],
     NewState = State#state{nodes = NewNodesList},
     {noreply, NewState};    
 
 handle_info({node_leaving, NodeId}, State) ->
-    print_cli("[REMOVE NODE] New node removing ~p", [NodeId]),
+    print_cli("{node_leaving} Node removed ~p", [NodeId]),
     NewNodesList = lists:delete(NodeId, State#state.nodes),
     NewState = State#state{nodes = NewNodesList},
     {noreply, NewState};
@@ -135,7 +138,7 @@ handle_info({Port, {data, Data}}, State) when is_port(Port) ->
     {noreply, State};
 
 handle_info(_Info, State) -> 
-    print_cli("Unrecognizedd msg: ~s", [_Info]),
+    print_cli("Unrecognized msg: ~s", [_Info]),
     {noreply, State}.
 
 handle_call(get_state, _From, State) ->
@@ -150,8 +153,6 @@ handle_cast(_Msg, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-
-print_cli(Text, Args) -> egs_utils:print_cli("GameLogic", Text, Args).
 
 select_minimum_ip_node(NodeList) ->
     Sorted = lists:sort(fun(A, B) ->
