@@ -38,6 +38,7 @@
 
 -define(CENTRAL_SUPERVISOR_NAME, 'nodes_supervisor@10.2.1.11').
 
+-define(LEADER_TABLE, leader_table).
 -define(LEADER_KEY, leader).
 
 % Module specific cli print
@@ -45,7 +46,7 @@ print_cli(Text, Args) -> egs_utils:print_cli("SUPERVIS.", Text, Args).
 
 %%% Function that returns leader id stored in ets
 get_leader() ->
-    case ets:lookup(?GAME_PROC_TABLE, ?LEADER_KEY) of
+    case ets:lookup(?LEADER_TABLE, ?LEADER_KEY) of
         [{_, Leader}] -> Leader;
         [] -> undefined
     end.
@@ -77,6 +78,21 @@ init([]) ->
             public
         ]
     ),
+
+    %% Create the ETS table to contain current leader
+    ets:new(
+
+        % Table name
+        ?LEADER_TABLE, 
+    
+        % options
+        [
+            named_table, 
+            public
+        ]
+    ),
+
+
     print_cli("{init/1} ETS registry created", []),
 
     % supervisor options
@@ -126,7 +142,7 @@ init([]) ->
         {register_node, node()}
     ),
 
-    ets:insert(?GAME_PROC_TABLE, {?LEADER_KEY, ?CENTRAL_SUPERVISOR_NAME}),
+    ets:insert(?LEADER_TABLE, {?LEADER_KEY, ?CENTRAL_SUPERVISOR_NAME}),
 
     egs_fault_tolerance:start_link(?CENTRAL_SUPERVISOR_NAME, NodeList),
 
@@ -243,7 +259,7 @@ unregister_game(GameId) ->
 %%% In this, we will also help new supervisor to rebuild state
 new_leader(LeaderId) ->
     print_cli("New leader recieved ~p", [LeaderId]),
-    ets:insert(?GAME_PROC_TABLE, {?LEADER_KEY, LeaderId}),
+    ets:insert(?LEADER_TABLE, {?LEADER_KEY, LeaderId}),
 
     %% 1) notify all children
     Children = supervisor:which_children(?MODULE),
@@ -278,7 +294,7 @@ new_leader(LeaderId) ->
         {register_node, node()}
     ),
 
-    print_cli("Sending internal state to new leader ~p", [LeaderId]),
+    print_cli("Sending internal state to new leader ~p~nInternalState: ~p", [LeaderId, GamesWithPlayers]),
     %% 4) send to new supervisor
     gen_server:cast(
         {nodes_supervisor, LeaderId},

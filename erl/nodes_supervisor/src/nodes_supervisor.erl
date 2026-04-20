@@ -110,7 +110,6 @@ init([]) ->
 
     case application:get_env(myapp, nodes_list) of
         {ok, Nodes} when is_list(Nodes) ->
-            print_cli("{init/1} input list: ~p", [Nodes]),
             lists:foreach(
                 fun(Node) ->
                     {fault_tolerance_handler, Node} ! {new_leader, node()}
