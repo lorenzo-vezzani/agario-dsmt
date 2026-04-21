@@ -896,24 +896,26 @@ function onGameOver(gameoverData) {
     const balls = Array.isArray(gameoverData.ordered_balls) ? gameoverData.ordered_balls : [];
     const stats = Array.isArray(gameoverData.stats) ? gameoverData.stats : [];
 
-    // Construct a map for the stats
-    const statsMap = new Map(stats.map(s => [s.id, s]));
+    // Construct a map for the balls
+    const ballIds = new Set(balls.map(b => b.id));
+    const ballsMap = new Map(balls.map(b => [b.id, b]));
 
     // Loop over the ball array
     // Loop over the ball array (already ordered by server: 1st = winner)
-    const ballRows = balls.map((b, i) => {
-        const isMe = b.id === INIT_PLAYER_ID;
-        const s    = statsMap.get(b.id) || { k: '—', d: '—' };
-        const name = b.id.length > 14 ? b.id.slice(0, 13) + '…' : b.id;
-        const size = b.r != null ? Math.round(b.r) : '—';
+    const rows = stats.map((s, i) => {
+        const isMe = s.id === INIT_PLAYER_ID;
+        const alive = ballIds.has(s.id);
+        const ball = ballsMap.get(s.id);
+        const name = s.id.length > 14 ? s.id.slice(0, 13) + '…' : s.id;
+        const size = ball?.r != null ? Math.round(ball.r) : '—';
 
-        return `<div class="lb-row${isMe ? ' lb-me' : ''}">
-            <span class="lb-rank">${i + 1}</span>
-            <span class="lb-name">${name}</span>
-            <span class="lb-r">${size}</span>
-            <span class="lb-k">${s.k}</span>
-            <span class="lb-d">${s.d}</span>
-        </div>`;
+        return `<div class="lb-row${isMe ? ' lb-me' : ''}" style="${alive ? '' : 'opacity:0.5'}">
+        <span class="lb-rank">${alive ? i + 1 : '💀'}</span>
+        <span class="lb-name">${name}</span>
+        <span class="lb-r">${size}</span>
+        <span class="lb-k">${s.k}</span>
+        <span class="lb-d">${s.d}</span>
+    </div>`;
     }).join('');
 
     // Add header row and append balls list
@@ -924,7 +926,7 @@ function onGameOver(gameoverData) {
             <span class="lb-r">SZ</span>
             <span class="lb-k">K</span>
             <span class="lb-d">D</span>
-        </div>` + ballRows;
+        </div>` + rows;
 }
 
 /**
