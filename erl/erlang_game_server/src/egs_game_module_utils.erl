@@ -482,14 +482,14 @@ encode__gameover(Stats, Balls) ->
         maps:to_list(Stats)
     ),
 
-    % [statistics] get their list in json
-    JSON_stats_data = lists:foldl(
+    % [statistics] get their list in json (reverse beacuse accumulating in front)
+    JSON_stats_data = lists:reverse(lists:foldl(
         fun({PlayerId, PlayerStats}, Accumulator) ->
             [encode__stats(PlayerId, PlayerStats) | Accumulator]
         end, 
         [],     % accumulator initially set to empty list
         SortedStats   % map is Stats
-    ),
+    )),
 
     % with iolist_to_binary we can avoid manual loop and string join
     iolist_to_binary([
