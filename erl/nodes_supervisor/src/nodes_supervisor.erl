@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 %% Public API
--export([start_link/0, start_game/0, game_terminated/2, token_auth/3, get_games_list/0, register_node/1, unregister_node/1]).
+-export([start_link/0, start_game/0, game_terminated/2, token_auth/3, get_games_list/0, register_node/1, unregister_node/1, join_completed/1, leave_completed/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -76,6 +76,12 @@ register_node(NodeId) ->
 %% Synchronous call: returns {ok, count-of-active-processes} or error if required node is not found
 unregister_node(NodeId) ->
     gen_server:call(?SERVER, {unregister_node, NodeId}).
+
+join_completed(GameId) ->
+    gen_server:call(?SERVER, {join_completed, GameId}).
+
+leave_completed(GameId) ->
+    gen_server:call(?SERVER, {leave_completed, GameId}).
 
 %%% ============================================================
 %%%  Callbacks
